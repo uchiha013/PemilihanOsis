@@ -1,0 +1,3 @@
+# Salin menjadi .dev.vars. Jangan commit file .dev.vars.
+SESSION_SECRET=ganti-dengan-random-secret-minimal-32-karakter
+TURNSTILE_SECRET_KEY=

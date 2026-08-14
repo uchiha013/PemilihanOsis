@@ -1,0 +1,10 @@
+{
+  "$schema":"./node_modules/wrangler/config-schema.json",
+  "name":"pemilihan-osis",
+  "main":"src/index.ts",
+  "compatibility_date":"2026-08-08",
+  "compatibility_flags":["nodejs_compat"],
+  "observability":{"enabled":true,"head_sampling_rate":1},
+  "d1_databases":[{"binding":"DB","database_name":"pemilihan-osis","database_id":"a0afb0b1-a105-42ff-bdc4-2842ded8b6ea","migrations_dir":"migrations"}],
+  "vars":{"ENVIRONMENT":"production","TURNSTILE_SITE_KEY":""}
+}

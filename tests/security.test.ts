@@ -1,0 +1,22 @@
+import {describe,it,expect} from 'vitest'; import {readFileSync} from 'node:fs'; import {randomToken,sha256,hashPassword,verifyPassword} from '../src/utils/crypto';
+const schema=readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'); const voting=readFileSync(new URL('../src/services/voting.ts',import.meta.url),'utf8'); const quick=readFileSync(new URL('../src/services/quick-count.ts',import.meta.url),'utf8');
+describe('security and privacy invariants',()=>{
+ it('creates unpredictable QR tokens',()=>{const a=randomToken(),b=randomToken();expect(a).not.toBe(b);expect(a.length).toBeGreaterThanOrEqual(40)});
+ it('hashes QR tokens',async()=>expect(await sha256('token')).toMatch(/^[a-f0-9]{64}$/));
+ it('hashes and verifies passwords',async()=>{const h=await hashPassword('very-long-password');expect(h).not.toContain('very-long-password');expect(await verifyPassword('very-long-password',h)).toBe(true);expect(await verifyPassword('wrong',h)).toBe(false)});
+ it('votes have no student identifier',()=>{const t=schema.match(/CREATE TABLE votes \([\s\S]*?\);/)?.[0]||'';expect(t).not.toMatch(/student|token/i)});
+ it('enforces unique class and attendance',()=>expect(schema).toContain('UNIQUE(class_name, attendance_number)'));
+ it('checks voter state',()=>expect(schema).toContain('CHECK((has_voted=0 AND voted_at IS NULL)'));
+ it('constrains election status',()=>expect(schema).toContain("CHECK(status IN ('DRAFT','OPEN','CLOSED'))"));
+ it('validates hashed token',()=>expect(voting).toContain('s.qr_token_hash=?'));
+ it('requires unused ballot',()=>expect(voting).toContain('s.has_voted=0'));
+ it('requires OPEN election',()=>expect(voting).toContain("e.status='OPEN'"));
+ it('checks election window',()=>{expect(voting).toContain('e.start_at');expect(voting).toContain('e.end_at')});
+ it('uses one atomic D1 batch',()=>expect(voting).toContain('env.DB.batch'));
+ it('marks voter only after one insert',()=>expect(voting).toContain('changes()=1'));
+ it('quick count is aggregate-only',()=>{expect(quick).toContain('COUNT(*)');expect(quick).not.toMatch(/qr_token|attendance_number/)});
+ it('checks ballot integrity',()=>expect(quick).toContain('votedStudents===totalVotes'));
+ it('guards zero division',()=>expect(quick).toContain('totalVotes?'));
+ it('locks deletion while open',()=>expect(schema).toContain('no_vote_delete_open'));
+ it('stores session expiry',()=>expect(schema).toContain('expires_at TEXT NOT NULL'));
+});
