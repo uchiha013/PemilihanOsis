@@ -18,7 +18,7 @@ export function layout(
         <style>${css}</style>
       </head>
 
-      <body>
+      <body class="${opts.admin ? 'admin-theme' : ''}">
         <!-- Background Glowing Particles (Pure CSS) -->
         <div class="bg-glow"></div>
 
@@ -37,15 +37,20 @@ export function layout(
                   <a href="/admin/candidates">Kandidat</a>
                   <a href="/admin/results">Hasil</a>
                   <a href="/quick-count">Quick Count</a>
+                  <a href="/status">Status Bilik</a>
                   <a href="/admin/settings">Pengaturan</a>
                   <a href="/admin/audit">Audit</a>
+                  <form method="post" action="/admin/logout" style="display:inline;margin:0">
+                    <input type="hidden" name="csrf" value="${esc(opts.csrfToken || '')}">
+                    <button class="secondary" style="padding:8px 14px;font-size:13px">Logout</button>
+                  </form>
                 </nav>
               `
               : ''
           }
         </header>
 
-        <main class="${opts.wide ? 'wide' : ''}">
+        <main class="${opts.wide ? 'wide' : ''} ${opts.admin ? 'admin-page' : ''}">
           ${content}
         </main>
 
@@ -99,6 +104,15 @@ const css = `
     flex-direction: column;
     overflow-x: hidden;
     position: relative;
+  }
+
+  /* Halaman admin: background terang, bukan hijau gelap + partikel.
+     Halaman publik (beranda, quick count proyektor) tetap seperti semula. */
+  body.admin-theme {
+    background: #f5f8fb;
+  }
+  body.admin-theme .bg-glow {
+    display: none;
   }
 
   /* =========================
@@ -295,6 +309,13 @@ const css = `
     text-shadow: 0 2px 10px rgba(0,0,0,0.2);
   }
 
+  /* h1 admin ada langsung di atas background (bukan di dalam kartu),
+     jadi ikut digelapkan supaya tidak hilang di background terang. */
+  .admin-page h1 {
+    color: var(--navy);
+    text-shadow: none;
+  }
+
   h2 {
     color: var(--navy);
     font-size: 24px;
@@ -417,6 +438,15 @@ const css = `
     margin-top: 20px;
     padding-top: 8px;
     box-shadow: var(--shadow-lg);
+  }
+
+  /* Halaman admin pakai kartu terang — teks di dalamnya (h2, angka .stat,
+     label polos, dsb) didesain untuk background terang, jadi kartu gelap
+     bikin teks nyaris tak kelihatan. Halaman publik (beranda, quick count
+     proyektor) tetap pakai kartu gelap sesuai desain aslinya. */
+  .admin-page .card {
+    background: #ffffff;
+    border: 1px solid var(--slate-100);
   }
 
   .stat strong {
