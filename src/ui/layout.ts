@@ -3,7 +3,7 @@ import { esc } from '../utils/http';
 export function layout(
   title: string,
   content: string,
-  opts: { admin?: boolean; wide?: boolean } = {},
+  opts: { admin?: boolean; wide?: boolean; csrfToken?: string } = {},
 ) {
   return `
     <!doctype html>
