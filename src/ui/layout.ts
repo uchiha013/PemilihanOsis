@@ -39,6 +39,10 @@ export function layout(
                   <a href="/quick-count">Quick Count</a>
                   <a href="/admin/settings">Pengaturan</a>
                   <a href="/admin/audit">Audit</a>
+                  <form method="post" action="/admin/logout" style="display:inline;margin:0">
+                    <input type="hidden" name="csrf" value="${esc(opts.csrfToken || '')}">
+                    <button class="secondary" style="padding:8px 14px;font-size:14px">Logout</button>
+                  </form>
                 </nav>
               `
               : ''
