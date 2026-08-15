@@ -295,6 +295,15 @@ const css = `
     font-weight: 600;
   }
 
+  /* Footer di halaman admin ada di atas background terang, bukan gelap
+     — jadi ikut digelapkan supaya tetap terbaca. */
+  body.admin-theme footer {
+    color: var(--slate-600);
+  }
+  body.admin-theme footer strong {
+    color: var(--navy);
+  }
+
   /* =========================
      TYPOGRAPHY & HERO
      ========================= */
@@ -529,6 +538,12 @@ const css = `
     color: #ffffffcc;
     display: block;
     margin: 16px 0 6px;
+  }
+
+  /* Label form di halaman admin ada di atas kartu putih, bukan kartu
+     hijau gelap — jadi ikut digelapkan supaya tidak hilang seperti h1. */
+  .admin-page label {
+    color: var(--navy);
   }
 
   input,
