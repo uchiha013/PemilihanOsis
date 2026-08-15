@@ -1,50 +1,336 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- D1 row shapes are narrowed immediately after each query. */
-import {Hono} from 'hono'; import type {Context} from 'hono'; import type {AppEnv} from '../types'; import {layout} from '../ui/layout'; import {body,esc,ip,jsonError} from '../utils/http'; import {createSession,destroySession,requireAdmin,requireCsrf} from '../auth/session'; import {hashPassword,randomToken,sha256,verifyPassword} from '../utils/crypto'; import {quickCount} from '../services/quick-count';
-export const adminRoutes=new Hono<AppEnv>();
-async function audit(c:Context<AppEnv>,action:string,target:string,metadata:Record<string,unknown>={}){await c.env.DB.prepare('INSERT INTO audit_logs(admin_id,action,target,metadata,ip_address) VALUES(?,?,?,?,?)').bind(c.get('adminId')||null,action,target,JSON.stringify(metadata),ip(c)).run()}
-const csrf=(c:Context<AppEnv>)=>`<script>window.CSRF=${JSON.stringify(c.get('csrfToken'))};document.addEventListener('submit',e=>{const f=e.target;if(f.method?.toLowerCase()==='post'&&!f.querySelector('[name=csrf]')){const i=document.createElement('input');i.type='hidden';i.name='csrf';i.value=window.CSRF;f.append(i)}})</script>`;
-const validCsrf=async(c:Context<AppEnv>)=>{const b=await body(c);return {b,ok:String(b.csrf||c.req.header('X-CSRF-Token')||'')===c.get('csrfToken')}};
-adminRoutes.get('/login',c=>c.html(layout('Login Admin',`<form class="card" method="post"><div class="eyebrow">AREA PANITIA</div><h1>Login Admin</h1>${c.req.query('expired')?'<div class="alert">Sesi berakhir. Silakan login kembali.</div>':''}<label>Email</label><input type="email" name="email" autocomplete="email" placeholder="admin@sekolah.sch.id" required><label>Password</label><input type="password" name="password" autocomplete="current-password" required><button style="margin-top:18px;width:100%">Masuk</button></form>`)));
-adminRoutes.post('/login',async c=>{const b=await body(c),email=String(b.email||'').trim().toLowerCase(),password=String(b.password||'');const key=await sha256(`${ip(c)}:${email}`);const attempt=await c.env.DB.prepare("SELECT attempts,window_started_at FROM login_attempts WHERE key_hash=? AND window_started_at>datetime('now','-15 minutes')").bind(key).first<{attempts:number}>();if((attempt?.attempts??0)>=5)return c.html(layout('Terlalu Banyak Percobaan','<div class="card"><h1>Coba lagi nanti.</h1><p>Terlalu banyak percobaan login.</p></div>'),429);const admin=await c.env.DB.prepare('SELECT id,password_hash FROM admins WHERE email=?').bind(email).first<{id:number;password_hash:string}>();const ok=admin&&await verifyPassword(password,admin.password_hash);if(!ok){await c.env.DB.prepare("INSERT INTO login_attempts(key_hash,attempts,window_started_at) VALUES(?,1,CURRENT_TIMESTAMP) ON CONFLICT(key_hash) DO UPDATE SET attempts=CASE WHEN window_started_at<=datetime('now','-15 minutes') THEN 1 ELSE attempts+1 END,window_started_at=CASE WHEN window_started_at<=datetime('now','-15 minutes') THEN CURRENT_TIMESTAMP ELSE window_started_at END").bind(key).run();return c.html(layout('Login Gagal','<div class="card"><h1>Login gagal.</h1><a class="btn" href="/admin/login">Coba lagi</a></div>'),401)}await createSession(c,admin.id);c.set('adminId',admin.id);await audit(c,'LOGIN','admin');await c.env.DB.prepare('DELETE FROM login_attempts WHERE key_hash=?').bind(key).run();return c.redirect('/admin')});
-adminRoutes.post('/setup',async c=>{const count=await c.env.DB.prepare('SELECT COUNT(*) n FROM admins').first<{n:number}>();if((count?.n??0)>0)return jsonError(c,409,'Admin sudah tersedia.');const b=await body(c),secret=c.req.header('X-Setup-Secret')||'',expected=c.env.SESSION_SECRET;if(!expected||secret!==expected)return jsonError(c,403,'Setup secret tidak valid.');const email=String(b.email||'').trim().toLowerCase(),password=String(b.password||'');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return jsonError(c,400,'Email admin tidak valid.');if(password.length<12)return jsonError(c,400,'Password minimal 12 karakter.');await c.env.DB.prepare('INSERT INTO admins(email,password_hash) VALUES(?,?)').bind(email,await hashPassword(password)).run();return c.json({ok:true,message:'Admin pertama dibuat.'})});
-adminRoutes.use('/*',requireAdmin);
-adminRoutes.use('/*',async (c,next)=>{
-  const adminId=c.get('adminId');
-  const admin=await c.env.DB.prepare('SELECT role FROM admins WHERE id=?').bind(adminId).first<{role:string}>();
-  if(admin?.role==='bilik'){
-    return c.html(layout('Akses Ditolak','<div class="card"><h1>Akun ini tidak punya akses ke panel admin.</h1><p>Silakan buka <a href="/status">/status</a>.</p></div>'),403);
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+import { Hono } from 'hono';
+import type { Context } from 'hono';
+
+import type { AppEnv } from '../types';
+
+import { layout } from '../ui/layout';
+
+import {
+  body,
+  esc,
+  ip,
+  jsonError,
+} from '../utils/http';
+
+import {
+  createSession,
+  destroySession,
+  requireAdmin,
+  requireCsrf,
+} from '../auth/session';
+
+import {
+  hashPassword,
+  randomToken,
+  sha256,
+  verifyPassword,
+} from '../utils/crypto';
+
+import { quickCount } from '../services/quick-count';
+
+export const adminRoutes = new Hono<AppEnv>();
+
+
+// ============================================================
+// Helpers
+// ============================================================
+
+async function audit(
+  c: Context<AppEnv>,
+  action: string,
+  target: string,
+  metadata: Record<string, unknown> = {},
+) {
+  await c.env.DB
+    .prepare(
+      `
+        INSERT INTO audit_logs (
+          admin_id,
+          action,
+          target,
+          metadata,
+          ip_address
+        )
+        VALUES (?, ?, ?, ?, ?)
+      `,
+    )
+    .bind(
+      c.get('adminId') || null,
+      action,
+      target,
+      JSON.stringify(metadata),
+      ip(c),
+    )
+    .run();
+}
+
+const csrf = (c: Context<AppEnv>) => `
+  <script>
+    window.CSRF = ${JSON.stringify(c.get('csrfToken'))};
+
+    document.addEventListener('submit', (event) => {
+      const form = event.target;
+
+      if (
+        form.method?.toLowerCase() === 'post' &&
+        !form.querySelector('[name="csrf"]')
+      ) {
+        const input = document.createElement('input');
+
+        input.type = 'hidden';
+        input.name = 'csrf';
+        input.value = window.CSRF;
+
+        form.append(input);
+      }
+    });
+  </script>
+`;
+
+const validCsrf = async (c: Context<AppEnv>) => {
+  const b = await body(c);
+
+  const token =
+    String(
+      b.csrf ||
+      c.req.header('X-CSRF-Token') ||
+      '',
+    );
+
+  return {
+    b,
+    ok: token === c.get('csrfToken'),
+  };
+};
+
+
+// ============================================================
+// Authentication
+// ============================================================
+
+adminRoutes.get('/login', (c) =>
+  c.html(
+    layout(
+      'Login Admin',
+      `
+        <form class="card" method="post">
+          <div class="eyebrow">
+            AREA PANITIA
+          </div>
+
+          <h1>Login Admin</h1>
+
+          ${
+            c.req.query('expired')
+              ? `
+                <div class="alert">
+                  Sesi berakhir. Silakan login kembali.
+                </div>
+              `
+              : ''
+          }
+
+          <label>Email</label>
+          <input
+            type="email"
+            name="email"
+            autocomplete="email"
+            placeholder="admin@sekolah.sch.id"
+            required
+          />
+
+          <label>Password</label>
+          <input
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          />
+
+          <button
+            style="margin-top: 18px; width: 100%"
+          >
+            Masuk
+          </button>
+        </form>
+      `,
+    ),
+  ),
+);
+
+
+adminRoutes.post('/login', async (c) => {
+  const b = await body(c);
+
+  const email = String(b.email || '')
+    .trim()
+    .toLowerCase();
+
+  const password = String(b.password || '');
+
+  const key = await sha256(
+    `${ip(c)}:${email}`,
+  );
+
+  // ...
+});
+
+
+adminRoutes.post('/logout', async (c) => {
+  const { ok } = await validCsrf(c);
+
+  if (!ok) {
+    return c.text('CSRF invalid', 403);
   }
+
+  await audit(
+    c,
+    'LOGOUT',
+    'admin',
+  );
+
+  await destroySession(c);
+
+  return c.redirect('/admin/login');
+});
+
+
+// ============================================================
+// Middleware
+// ============================================================
+
+adminRoutes.use('/*', requireAdmin);
+
+adminRoutes.use('/*', async (c, next) => {
+  const adminId = c.get('adminId');
+
+  const admin = await c.env.DB
+    .prepare(
+      'SELECT role FROM admins WHERE id = ?',
+    )
+    .bind(adminId)
+    .first<{ role: string }>();
+
+  if (admin?.role === 'bilik') {
+    return c.html(
+      layout(
+        'Akses Ditolak',
+        `
+          <div class="card">
+            <h1>
+              Akun ini tidak punya akses
+              ke panel admin.
+            </h1>
+
+            <p>
+              Silakan buka
+              <a href="/status">/status</a>.
+            </p>
+          </div>
+        `,
+      ),
+      403,
+    );
+  }
+
   await next();
 });
-adminRoutes.use('/students/import',async c=>{if(c.req.method==='GET'){const message=c.req.query('imported')?`<div class="alert ok">${esc(c.req.query('imported'))} siswa berhasil diimpor.</div>`:'';return c.html(layout('Import CSV',`<div class="eyebrow">IMPORT SISWA</div><h1>Upload CSV Siswa</h1>${message}<form class="card" method="post" enctype="multipart/form-data"><p>Format header (wajib persis, huruf kecil): <code>nama,kelas,absen,username,password</code></p><p class="muted">Contoh: <code>Ahmad Fauzan,IX A,1,ahmad01,rahasia1</code></p><p class="muted">Kolom <code>username</code> dan <code>password</code> boleh dikosongkan (koma tetap ditulis) kalau belum mau diset sekarang, misal: <code>Ahmad Fauzan,IX A,1,,</code></p><input type="hidden" name="csrf" value="${esc(c.get('csrfToken'))}"><label for="csv_file">Pilih file CSV</label><input type="file" id="csv_file" name="csv_file" accept=".csv,text/csv" required><button style="margin-top:18px;width:100%">Upload & Import Siswa</button><p class="muted">File akan divalidasi oleh server. Maksimal 2.000 siswa per import.</p></form>`,{admin:true,csrfToken:c.get('csrfToken')}))}if(c.req.method!=='POST')return c.text('Method Not Allowed',405);const parsed=await c.req.parseBody(),csrfValue=String(parsed.csrf||'');if(csrfValue!==c.get('csrfToken'))return c.text('CSRF invalid',403);const state=await c.env.DB.prepare('SELECT status FROM election_settings WHERE id=1').first<{status:string}>();if(state?.status!=='DRAFT')return c.html(layout('Import Ditolak','<div class="card"><h1>Import hanya dapat dilakukan saat election DRAFT.</h1><a class="btn" href="/admin/settings">Buka Pengaturan</a></div>',{admin:true,csrfToken:c.get('csrfToken')}),409);const file=parsed.csv_file;if(!(file instanceof File))return c.html(layout('CSV Tidak Valid','<div class="card"><h1>File CSV belum dipilih.</h1><a class="btn" href="/admin/students/import">Kembali</a></div>',{admin:true,csrfToken:c.get('csrfToken')}),400);if(file.size>2_000_000)return c.text('Ukuran CSV maksimal 2 MB.',413);const text=(await file.text()).replace(/^\uFEFF/,'').trim();const lines=text.split(/\r?\n/),header=(lines.shift()||'').toLowerCase().split(',').map(x=>x.trim());if(header.join(',')!=='nama,kelas,absen,username,password')return c.html(layout('Header CSV Salah','<div class="card"><h1>Header CSV harus: nama,kelas,absen,username,password</h1><a class="btn" href="/admin/students/import">Perbaiki File</a></div>',{admin:true,csrfToken:c.get('csrfToken')}),400);const rows=lines.filter(line=>line.trim()).map((line,index)=>{const parts=line.split(',');return {name:(parts[0]||'').trim(),className:(parts[1]||'').trim(),attendance:Number((parts[2]||'').trim()),username:(parts[3]||'').trim().toLowerCase(),password:(parts[4]||'').trim(),line:index+2,columns:parts.length}});if(!rows.length||rows.length>2000)return c.text('Jumlah siswa harus 1–2000.',400);const invalid=rows.find(row=>row.columns!==5||!row.name||!row.className||!Number.isInteger(row.attendance)||row.attendance<1||(row.username&&!/^[a-z0-9._-]{3,40}$/.test(row.username))||(row.username&&row.password.length<4)||(row.username&&!row.password)||(!row.username&&row.password));if(invalid)return c.html(layout('Data CSV Salah',`<div class="card"><h1>Data baris ${invalid.line} tidak valid.</h1><p>Pastikan nama, kelas, absen terisi. Username (3+ karakter, huruf kecil/angka/./_/-) dan password (4+ karakter) harus diisi berpasangan atau dikosongkan berdua.</p><a class="btn" href="/admin/students/import">Perbaiki File</a></div>`,{admin:true,csrfToken:c.get('csrfToken')}),400);const usernames=rows.filter(r=>r.username).map(r=>r.username);if(new Set(usernames).size!==usernames.length)return c.html(layout('Username Duplikat','<div class="card"><h1>Ada username yang sama di lebih dari satu baris CSV.</h1><a class="btn" href="/admin/students/import">Perbaiki File</a></div>',{admin:true,csrfToken:c.get('csrfToken')}),400);try{const stmts=await Promise.all(rows.map(async row=>row.username?c.env.DB.prepare('INSERT INTO students(name,class_name,attendance_number,username,password_hash) VALUES(?,?,?,?,?)').bind(row.name,row.className,row.attendance,row.username,await hashPassword(row.password)):c.env.DB.prepare('INSERT INTO students(name,class_name,attendance_number) VALUES(?,?,?)').bind(row.name,row.className,row.attendance)));await c.env.DB.batch(stmts)}catch{return c.html(layout('Import Gagal','<div class="card"><h1>Ada kelas, nomor absen, atau username yang sudah dipakai (duplikat).</h1><p>Hapus data duplikat dari CSV atau database, lalu coba lagi.</p><a class="btn" href="/admin/students/import">Kembali</a></div>',{admin:true,csrfToken:c.get('csrfToken')}),409)}await audit(c,'IMPORT_STUDENTS','students',{count:rows.length});return c.redirect(`/admin/students/import?imported=${rows.length}`)});
-adminRoutes.get('/',async c=>{const d=await quickCount(c.env);return c.html(layout('Dashboard Admin',`<div class="eyebrow">DASHBOARD PANITIA</div><h1>${esc(d.electionName)}</h1><div class="grid"><div class="card stat">Total Siswa<strong>${d.totalStudents}</strong></div><div class="card stat">Sudah Memilih<strong>${d.integrity.votedStudents}</strong></div><div class="card stat">Belum Memilih<strong>${d.notVoted}</strong></div><div class="card stat">Partisipasi<strong>${d.turnoutPercentage}%</strong></div></div><div class="card" style="margin-top:18px"><h2>Status Sistem</h2><p>Election: <span class="badge">${esc(d.status)}</span> · Quick Count: <span class="badge">${d.enabled?'AKTIF':'NONAKTIF'}</span></p><div class="progress"><i style="width:${d.turnoutPercentage}%"></i></div><p>Integritas: <strong class="${d.integrity.valid?'ok':'bad'}">${d.integrity.valid?'VALID':'PERLU DIPERIKSA'}</strong> (${d.integrity.votedStudents} siswa memilih / ${d.integrity.totalVotes} suara)</p></div>${csrf(c)}`,{admin:true,csrfToken:c.get('csrfToken')}));});
-adminRoutes.post('/logout',async c=>{const {ok}=await validCsrf(c);if(!ok)return c.text('CSRF invalid',403);await audit(c,'LOGOUT','admin');await destroySession(c);return c.redirect('/admin/login')});
-adminRoutes.get('/students',async c=>{const q=(c.req.query('q')||'').trim(),klass=c.req.query('class')||'',status=c.req.query('status')||'';let sql='SELECT * FROM students WHERE 1=1',args:unknown[]=[];if(q){sql+=' AND name LIKE ?';args.push(`%${q}%`)}if(klass){sql+=' AND class_name=?';args.push(klass)}if(status==='voted'){sql+=' AND has_voted=1'}if(status==='not'){sql+=' AND has_voted=0'}sql+=' ORDER BY class_name,attendance_number LIMIT 1000';const rows=await c.env.DB.prepare(sql).bind(...args).all<Record<string,unknown>>();const classes=await c.env.DB.prepare('SELECT DISTINCT class_name FROM students ORDER BY class_name').all<{class_name:string}>();const trs=rows.results.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.class_name)}</td><td>${s.attendance_number}</td><td><span class="badge ${s.has_voted?'green':''}">${s.has_voted?'SUDAH':'BELUM'}</span></td><td>${s.qr_token_hash?'Tersedia':'Belum dibuat'}</td><td><button onclick="gen(${s.id})">${s.qr_token_hash?'Regenerate':'Generate'} QR</button></td></tr>`).join('');return c.html(layout('Siswa',`<div class="eyebrow">DATA PEMILIH</div><h1>Manajemen Siswa</h1><div class="actions" style="justify-content:flex-start"><a class="btn" href="/admin/students/import">Import CSV</a><a class="btn secondary" href="/admin/export/students">Export Partisipasi</a></div><form method="get" class="card" style="max-width:none;margin:18px 0;display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px"><input name="q" placeholder="Cari nama" value="${esc(q)}"><select name="class"><option value="">Semua kelas</option>${classes.results.map(x=>`<option ${x.class_name===klass?'selected':''}>${esc(x.class_name)}</option>`).join('')}</select><select name="status"><option value="">Semua status</option><option value="not" ${status==='not'?'selected':''}>Belum</option><option value="voted" ${status==='voted'?'selected':''}>Sudah</option></select><button>Cari</button></form><div class="table-wrap"><table><thead><tr><th>Nama</th><th>Kelas</th><th>Absen</th><th>Status</th><th>QR</th><th>Aksi</th></tr></thead><tbody>${trs}</tbody></table></div><script>async function gen(id){if(!confirm('QR lama akan tidak berlaku. Lanjutkan?'))return;const r=await fetch('/admin/api/students/'+id+'/qr',{method:'POST',headers:{'X-CSRF-Token':CSRF}});const d=await r.json();if(r.ok){const w=open('','_blank');w.document.write('<title>QR Siswa</title><h2>'+d.student.name+' — '+d.student.className+' / '+d.student.attendanceNumber+'</h2><img style="max-width:600px" src="/qr/'+id+'?token='+encodeURIComponent(d.token)+'"><p>Token hanya ditampilkan sekali. Cetak halaman ini sekarang.</p>');}else alert(d.error)}</script>${csrf(c)}`,{admin:true,csrfToken:c.get('csrfToken')}));});
-adminRoutes.post('/api/students/:id/qr',async c=>{if(!requireCsrf(c))return jsonError(c,403,'CSRF invalid');const id=Number(c.req.param('id')),token=randomToken(32);const result=await c.env.DB.prepare('UPDATE students SET qr_token_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND has_voted=0').bind(await sha256(token),id).run();if(!result.meta.changes)return jsonError(c,409,'QR tidak dapat diubah setelah siswa memilih.');const s=await c.env.DB.prepare('SELECT name,class_name,attendance_number FROM students WHERE id=?').bind(id).first<any>();await audit(c,'REGENERATE_QR','student',{studentId:id});return c.json({ok:true,token,student:{name:s.name,className:s.class_name,attendanceNumber:s.attendance_number}})});
 
-// --- BARU: set username & password login siswa (menggantikan/melengkapi alur QR) ---
-adminRoutes.post('/api/students/:id/credentials',async c=>{if(!requireCsrf(c))return jsonError(c,403,'CSRF invalid');const id=Number(c.req.param('id')),b=await body(c);const username=String(b.username||'').trim().toLowerCase(),password=String(b.password||'');if(!/^[a-z0-9._-]{3,40}$/.test(username))return jsonError(c,400,'Username minimal 3 karakter, huruf/angka/./_/- saja.');if(password.length<4)return jsonError(c,400,'Password minimal 4 karakter.');const existing=await c.env.DB.prepare('SELECT id FROM students WHERE username=? AND id!=?').bind(username,id).first<{id:number}>();if(existing)return jsonError(c,409,'Username sudah dipakai siswa lain.');const result=await c.env.DB.prepare('UPDATE students SET username=?,password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND has_voted=0').bind(username,await hashPassword(password),id).run();if(!result.meta.changes)return jsonError(c,409,'Kredensial tidak dapat diubah setelah siswa memilih.');await audit(c,'SET_STUDENT_CREDENTIALS','student',{studentId:id,username});return c.json({ok:true,username})});
-// --- END BARU ---
 
-adminRoutes.get('/students/import',c=>c.html(layout('Import CSV',`<div class="eyebrow">IMPORT SISWA</div><h1>Preview & Validasi CSV</h1><div class="card"><p>Format header: <code>nama,kelas,absen,username,password</code></p><p class="muted">Username & password boleh dikosongkan per baris (koma tetap ditulis).</p><label for="file">Pilih file CSV</label><input type="file" id="file" accept=".csv,text/csv"><div id="status" class="alert">Pilih file CSV untuk melihat preview.</div><div id="preview"></div><button id="send" disabled>Upload & Import Siswa</button></div><script>let rows=[];const fileInput=document.getElementById('file'),statusBox=document.getElementById('status'),previewBox=document.getElementById('preview'),sendButton=document.getElementById('send');const safe=v=>String(v).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));fileInput.addEventListener('change',async()=>{sendButton.disabled=true;rows=[];previewBox.innerHTML='';const selected=fileInput.files[0];if(!selected){statusBox.textContent='Pilih file CSV.';return}try{const text=(await selected.text()).replace(/^\\uFEFF/,'').trim();const lines=text.split(/\\r?\\n/);const header=(lines.shift()||'').toLowerCase().split(',').map(x=>x.trim());if(header.join(',')!=='nama,kelas,absen,username,password')throw new Error('Header harus tepat: nama,kelas,absen,username,password');rows=lines.filter(x=>x.trim()).map((line,index)=>{const p=line.split(',');return {name:(p[0]||'').trim(),className:(p[1]||'').trim(),attendanceNumber:Number((p[2]||'').trim()),username:(p[3]||'').trim().toLowerCase(),password:(p[4]||'').trim(),line:index+2}});const invalid=rows.filter(x=>!x.name||!x.className||!Number.isInteger(x.attendanceNumber)||x.attendanceNumber<1||(x.username&&!/^[a-z0-9._-]{3,40}$/.test(x.username))||(x.username&&x.password.length<4)||(x.username&&!x.password)||(!x.username&&x.password));statusBox.textContent=rows.length+' baris ditemukan · '+invalid.length+' baris tidak valid.';previewBox.innerHTML='<div class="table-wrap"><table><thead><tr><th>Baris</th><th>Nama</th><th>Kelas</th><th>Absen</th><th>Username</th></tr></thead><tbody>'+rows.slice(0,200).map(x=>'<tr><td>'+x.line+'</td><td>'+safe(x.name)+'</td><td>'+safe(x.className)+'</td><td>'+safe(x.attendanceNumber)+'</td><td>'+safe(x.username||'-')+'</td></tr>').join('')+'</tbody></table></div>';sendButton.disabled=rows.length===0||invalid.length>0}catch(error){statusBox.textContent=error.message||'CSV tidak dapat dibaca.'}});sendButton.addEventListener('click',async()=>{sendButton.disabled=true;sendButton.textContent='Mengimpor…';const r=await fetch('/admin/api/students/import',{method:'POST',headers:{'content-type':'application/json','X-CSRF-Token':CSRF},body:JSON.stringify({rows})});const d=await r.json();if(r.ok){location='/admin/students'}else{statusBox.textContent=d.error||'Import gagal.';sendButton.disabled=false;sendButton.textContent='Upload & Import Siswa'}})</script>${csrf(c)}`,{admin:true,csrfToken:c.get('csrfToken')})));
-adminRoutes.post('/api/students/import',async c=>{if(!requireCsrf(c))return jsonError(c,403,'CSRF invalid');const b=await body(c),rows=Array.isArray(b.rows)?b.rows:[];if(!rows.length||rows.length>2000)return jsonError(c,400,'Jumlah baris harus 1–2000.');const usernames:string[]=[];for(const x of rows){const r=x as Record<string,unknown>,name=String(r.name||'').trim(),className=String(r.className||'').trim(),n=Number(r.attendanceNumber),username=String(r.username||'').trim().toLowerCase(),password=String(r.password||'');if(!name||!className||!Number.isInteger(n)||n<1)return jsonError(c,400,'Data CSV tidak valid.');if(username&&!/^[a-z0-9._-]{3,40}$/.test(username))return jsonError(c,400,'Username tidak valid pada salah satu baris.');if(username&&password.length<4)return jsonError(c,400,'Password minimal 4 karakter pada salah satu baris.');if((username&&!password)||(!username&&password))return jsonError(c,400,'Username dan password harus diisi berpasangan.');if(username)usernames.push(username)}if(new Set(usernames).size!==usernames.length)return jsonError(c,400,'Ada username yang sama di lebih dari satu baris.');const stmts=await Promise.all(rows.map(async x=>{const r=x as Record<string,unknown>,name=String(r.name||'').trim(),className=String(r.className||'').trim(),n=Number(r.attendanceNumber),username=String(r.username||'').trim().toLowerCase(),password=String(r.password||'');return username?c.env.DB.prepare('INSERT INTO students(name,class_name,attendance_number,username,password_hash) VALUES(?,?,?,?,?)').bind(name,className,n,username,await hashPassword(password)):c.env.DB.prepare('INSERT INTO students(name,class_name,attendance_number) VALUES(?,?,?)').bind(name,className,n)}));try{await c.env.DB.batch(stmts)}catch{return jsonError(c,409,'Import gagal. Periksa duplikasi kelas, nomor absen, atau username.')}await audit(c,'IMPORT_STUDENTS','students',{count:rows.length});return c.json({ok:true,count:rows.length})});
-adminRoutes.get('/export/students',async c=>{const r=await c.env.DB.prepare('SELECT name,class_name,attendance_number,has_voted,voted_at,username FROM students ORDER BY class_name,attendance_number').all<any>();const quote=(x:unknown)=>`"${String(x??'').replace(/"/g,'""')}"`;const csv=['Nama,Kelas,Absen,Username,Status Memilih,Waktu Memilih',...r.results.map(x=>[x.name,x.class_name,x.attendance_number,x.username||'',x.has_voted?'SUDAH MEMILIH':'BELUM MEMILIH',x.voted_at||''].map(quote).join(','))].join('\r\n');return new Response('\ufeff'+csv,{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="partisipasi-siswa.csv"'}})});
-adminRoutes.get('/candidates',async c=>{const rows=await c.env.DB.prepare('SELECT * FROM candidates ORDER BY candidate_number').all<any>();return c.html(layout('Kandidat',`<div class="eyebrow">PASANGAN CALON</div><h1>Manajemen Kandidat</h1><form class="card" method="post">${rows.results.map((x:any)=>`<fieldset><legend>Paslon ${x.candidate_number}</legend><input type="hidden" name="id" value="${x.id}"><label>Nomor urut</label><input name="number" type="number" value="${x.candidate_number}" required><label>Ketua</label><input name="chairman" value="${esc(x.chairman_name)}" required><label>Wakil</label><input name="vice" value="${esc(x.vice_chairman_name)}" required><label>URL Foto</label><input name="photo" value="${esc(x.photo_url)}"><label>Visi</label><textarea name="vision">${esc(x.vision)}</textarea><label>Misi</label><textarea name="mission">${esc(x.mission)}</textarea></fieldset>`).join('')}<button style="margin-top:18px">Simpan Kandidat</button></form>${csrf(c)}`,{admin:true,csrfToken:c.get('csrfToken')}))});
-adminRoutes.post('/candidates',async c=>{const {b,ok}=await validCsrf(c);if(!ok)return c.text('CSRF invalid',403);const arr=(x:unknown)=>Array.isArray(x)?x:[x];const ids=arr(b.id),nums=arr(b.number),chairs=arr(b.chairman),vices=arr(b.vice),photos=arr(b.photo),visions=arr(b.vision),missions=arr(b.mission);const stmts=ids.map((id,i)=>c.env.DB.prepare('UPDATE candidates SET candidate_number=?,chairman_name=?,vice_chairman_name=?,photo_url=?,vision=?,mission=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(Number(nums[i]),String(chairs[i]),String(vices[i]),String(photos[i]||''),String(visions[i]||''),String(missions[i]||''),Number(id)));await c.env.DB.batch(stmts);await audit(c,'UPDATE_CANDIDATES','candidates');return c.redirect('/admin/candidates')});
-adminRoutes.get('/results',async c=>{const d=await quickCount(c.env);return c.html(layout('Hasil Admin',`<div class="eyebrow">HASIL INTERNAL</div><h1>Perolehan Suara</h1><div class="grid"><div class="card stat">Total siswa<strong>${d.totalStudents}</strong></div><div class="card stat">Suara masuk<strong>${d.totalVotes}</strong></div><div class="card stat">Belum memilih<strong>${d.notVoted}</strong></div></div><div class="grid" style="margin-top:18px">${d.candidates.map((x:any)=>`<div class="card candidate"><div class="num">${String(x.candidateNumber).padStart(2,'0')}</div><h2>${esc(x.chairmanName)} & ${esc(x.viceChairmanName)}</h2><strong>${x.votes??0} suara</strong><div class="progress"><i style="width:${d.totalVotes?(x.votes??0)/d.totalVotes*100:0}%"></i></div><p>${d.totalVotes?((x.votes??0)/d.totalVotes*100).toFixed(2):'0.00'}%</p></div>`).join('')}</div><p>Integritas: <strong class="${d.integrity.valid?'ok':'bad'}">${d.integrity.valid?'VALID':'PERLU DIPERIKSA'}</strong></p>`,{admin:true,csrfToken:c.get('csrfToken')}))});
-adminRoutes.get('/settings',async c=>{const s=await c.env.DB.prepare('SELECT * FROM election_settings WHERE id=1').first<any>();return c.html(layout('Pengaturan',`<div class="eyebrow">KONTROL PEMILIHAN</div><h1>Pengaturan</h1><form class="card" method="post"><label>Nama election</label><input name="election_name" value="${esc(s.election_name)}"><label>Nama sekolah</label><input name="school_name" value="${esc(s.school_name)}"><label>Status</label><select name="status">${['DRAFT','OPEN','CLOSED'].map(x=>`<option ${s.status===x?'selected':''}>${x}</option>`).join('')}</select><label>Mulai (UTC)</label><input type="datetime-local" name="start_at" value="${esc(s.start_at||'')}"><label>Selesai (UTC)</label><input type="datetime-local" name="end_at" value="${esc(s.end_at||'')}"><h2>Quick Count</h2><label><input style="width:auto" type="checkbox" name="enabled" ${s.quick_count_enabled?'checked':''}> Aktifkan</label><label>Mode</label><select name="mode">${['OFF','PARTICIPATION_ONLY','PERCENTAGE_ONLY','FULL'].map(x=>`<option ${s.quick_count_mode===x?'selected':''}>${x}</option>`).join('')}</select><label>Refresh (3–60 detik)</label><input type="number" min="3" max="60" name="refresh" value="${s.quick_count_refresh_interval}"><label><input style="width:auto" type="checkbox" name="photos" ${s.show_candidate_photos?'checked':''}> Tampilkan foto</label><label><input style="width:auto" type="checkbox" name="winner" ${s.show_final_winner?'checked':''}> Tampilkan pemenang setelah ditutup</label><button>Simpan</button></form><form class="card" method="post" action="/admin/reset" style="margin-top:22px;border-color:#fca5a5"><h2 class="bad">Reset Pemilihan</h2><p>Menghapus seluruh suara dan mengembalikan status siswa. Ketik <strong>RESET PEMILIHAN</strong>.</p><input name="confirmation"><button class="danger" style="margin-top:12px">Reset</button></form>${csrf(c)}`,{admin:true,csrfToken:c.get('csrfToken')}))});
-adminRoutes.post('/settings',async c=>{const {b,ok}=await validCsrf(c);if(!ok)return c.text('CSRF invalid',403);const status=String(b.status),mode=String(b.mode),refresh=Math.max(3,Math.min(60,Number(b.refresh)||5));if(!['DRAFT','OPEN','CLOSED'].includes(status)||!['OFF','PARTICIPATION_ONLY','PERCENTAGE_ONLY','FULL'].includes(mode))return c.text('Invalid',400);await c.env.DB.prepare('UPDATE election_settings SET election_name=?,school_name=?,status=?,start_at=?,end_at=?,quick_count_enabled=?,quick_count_mode=?,quick_count_refresh_interval=?,show_candidate_photos=?,show_final_winner=?,updated_at=CURRENT_TIMESTAMP WHERE id=1').bind(String(b.election_name),String(b.school_name),status,b.start_at||null,b.end_at||null,b.enabled?1:0,mode,refresh,b.photos?1:0,b.winner?1:0).run();await audit(c,'UPDATE_SETTINGS','election',{status,quickCountMode:mode});return c.redirect('/admin/settings')});
-adminRoutes.post('/reset',async c=>{const {b,ok}=await validCsrf(c);if(!ok)return c.text('CSRF invalid',403);if(b.confirmation!=='RESET PEMILIHAN')return c.text('Konfirmasi tidak cocok',400);await c.env.DB.batch([c.env.DB.prepare("UPDATE election_settings SET status='DRAFT' WHERE id=1"),c.env.DB.prepare('DELETE FROM votes'),c.env.DB.prepare('UPDATE students SET has_voted=0,voted_at=NULL,updated_at=CURRENT_TIMESTAMP')]);await audit(c,'RESET_ELECTION','election');return c.redirect('/admin')});
-adminRoutes.get('/audit',async c=>{const r=await c.env.DB.prepare('SELECT a.*,u.email FROM audit_logs a LEFT JOIN admins u ON u.id=a.admin_id ORDER BY a.id DESC LIMIT 500').all<any>();return c.html(layout('Audit Log',`<div class="eyebrow">JEJAK ADMINISTRASI</div><h1>Audit Log</h1><div class="table-wrap"><table><tr><th>Waktu</th><th>Admin</th><th>Aksi</th><th>Target</th><th>Metadata</th></tr>${r.results.map(x=>`<tr><td>${esc(x.created_at)}</td><td>${esc(x.email||'-')}</td><td>${esc(x.action)}</td><td>${esc(x.target)}</td><td>${esc(x.metadata)}</td></tr>`).join('')}</table></div>`,{admin:true,csrfToken:c.get('csrfToken')}))});
+// ============================================================
+// Dashboard
+// ============================================================
 
-adminRoutes.get('/students/manage',async c=>{const election=await c.env.DB.prepare('SELECT status FROM election_settings WHERE id=1').first<{status:string}>();const rows=await c.env.DB.prepare('SELECT id,name,class_name,attendance_number,has_voted,username FROM students ORDER BY class_name,attendance_number').all<{id:number;name:string;class_name:string;attendance_number:number;has_voted:number;username:string|null}>();const draft=election?.status==='DRAFT';return c.html(layout('CRUD Siswa',`<div class="eyebrow">KELOLA DATA SISWA</div><h1>Tambah, Edit & Hapus Siswa</h1>${draft?'':`<div class="alert">CRUD siswa dikunci karena status election ${esc(election?.status)}. Ubah status ke DRAFT untuk mengelola data.</div>`}<div class="actions" style="justify-content:flex-start"><a class="btn" href="/admin/students/new">+ Tambah Siswa</a><a class="btn secondary" href="/admin/students/import">Import CSV</a><a class="btn secondary" href="/admin/students">Daftar & QR</a></div><div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>Nama</th><th>Kelas</th><th>Absen</th><th>Status</th><th>Username & Password</th><th>Aksi</th></tr></thead><tbody>${rows.results.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.class_name)}</td><td>${s.attendance_number}</td><td><span class="badge ${s.has_voted?'green':''}">${s.has_voted?'SUDAH':'BELUM'}</span></td><td><form method="post" action="/admin/students/${s.id}/credentials" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input name="username" value="${esc(s.username||'')}" placeholder="username" pattern="[a-z0-9._-]{3,40}" title="huruf kecil/angka/./_/- min 3 karakter" style="width:110px" required><input name="password" type="text" placeholder="password baru (kosongkan jika tidak ganti)" style="width:170px"><button type="submit">Simpan</button></form></td><td><a class="btn secondary" href="/admin/students/${s.id}/edit">Edit</a> <form method="post" action="/admin/students/${s.id}/delete" style="display:inline" onsubmit="return confirm('Hapus siswa ${esc(s.name)}? Username dan password login siswa ini juga ikut terhapus.')"><button class="danger">Hapus</button></form></td></tr>`).join('')}</tbody></table></div>${csrf(c)}`,{admin:true,csrfToken:c.get('csrfToken')}));});
-adminRoutes.get('/students/new',async c=>c.html(layout('Tambah Siswa',`<div class="eyebrow">DATA SISWA</div><h1>Tambah Siswa</h1><form class="card" method="post" action="/admin/students/create"><label>Nama lengkap</label><input name="name" maxlength="120" required><label>Kelas</label><input name="class_name" maxlength="50" placeholder="IXA" required><label>Nomor absen</label><input name="attendance_number" type="number" min="1" required><label>Username login</label><input name="username" maxlength="40" placeholder="contoh: budi01" pattern="[a-z0-9._-]{3,40}" title="huruf kecil/angka/./_/- minimal 3 karakter" required><label>Password login</label><input name="password" type="text" placeholder="minimal 4 karakter" minlength="4" required><div class="actions"><a class="btn secondary" href="/admin/students/manage">Batal</a><button>Simpan Siswa</button></div></form>${csrf(c)}`,{admin:true,csrfToken:c.get('csrfToken')})));
+adminRoutes.get('/', async (c) => {
+  const d = await quickCount(c.env);
 
-adminRoutes.post('/students/create',async c=>{const {b,ok}=await validCsrf(c);if(!ok)return c.text('CSRF invalid',403);const name=String(b.name||'').trim(),className=String(b.class_name||'').trim(),attendance=Number(b.attendance_number),username=String(b.username||'').trim().toLowerCase(),password=String(b.password||'');if(!name||!className||!Number.isInteger(attendance)||attendance<1)return c.text('Data siswa tidak valid.',400);if(!/^[a-z0-9._-]{3,40}$/.test(username))return c.text('Username minimal 3 karakter, huruf kecil/angka/./_/- saja.',400);if(password.length<4)return c.text('Password minimal 4 karakter.',400);const existing=await c.env.DB.prepare('SELECT id FROM students WHERE username=?').bind(username).first<{id:number}>();if(existing)return c.text('Username sudah dipakai siswa lain.',409);try{const result=await c.env.DB.prepare('INSERT INTO students(name,class_name,attendance_number,username,password_hash) VALUES(?,?,?,?,?)').bind(name,className,attendance,username,await hashPassword(password)).run();await audit(c,'ADD_STUDENT','student',{studentId:result.meta.last_row_id,username});return c.redirect('/admin/students/manage')}catch{return c.text('Kelas, nomor absen, atau username sudah digunakan.',409)}});
+  return c.html(
+    layout(
+      'Dashboard Admin',
+      `
+        <div class="eyebrow">
+          DASHBOARD PANITIA
+        </div>
 
-adminRoutes.get('/students/:id/edit',async c=>{const student=await c.env.DB.prepare('SELECT id,name,class_name,attendance_number,has_voted,username FROM students WHERE id=?').bind(Number(c.req.param('id'))).first<{id:number;name:string;class_name:string;attendance_number:number;has_voted:number;username:string|null}>();if(!student)return c.text('Siswa tidak ditemukan.',404);return c.html(layout('Edit Siswa',`<div class="eyebrow">DATA SISWA</div><h1>Edit Siswa</h1><form class="card" method="post"><label>Nama lengkap</label><input name="name" maxlength="120" value="${esc(student.name)}" required><label>Kelas</label><input name="class_name" maxlength="50" value="${esc(student.class_name)}" required><label>Nomor absen</label><input name="attendance_number" type="number" min="1" value="${student.attendance_number}" required><label>Username login</label><input name="username" maxlength="40" value="${esc(student.username||'')}" placeholder="contoh: budi01" pattern="[a-z0-9._-]{3,40}" title="huruf kecil/angka/./_/- minimal 3 karakter"><label>Password baru</label><input name="password" type="text" placeholder="kosongkan jika tidak ingin mengubah password"><div class="actions"><a class="btn secondary" href="/admin/students/manage">Batal</a><button>Simpan Perubahan</button></div></form>${csrf(c)}`,{admin:true,csrfToken:c.get('csrfToken')}))});
+        <h1>
+          ${esc(d.electionName)}
+        </h1>
 
-adminRoutes.post('/students/:id/edit',async c=>{const {b,ok}=await validCsrf(c);if(!ok)return c.text('CSRF invalid',403);const id=Number(c.req.param('id'));const name=String(b.name||'').trim(),className=String(b.class_name||'').trim(),attendance=Number(b.attendance_number),username=String(b.username||'').trim().toLowerCase(),password=String(b.password||'');if(!name||!className||!Number.isInteger(attendance)||attendance<1)return c.text('Data siswa tidak valid.',400);if(username&&!/^[a-z0-9._-]{3,40}$/.test(username))return c.text('Username minimal 3 karakter, huruf kecil/angka/./_/- saja.',400);if(password&&password.length<4)return c.text('Password minimal 4 karakter.',400);if(username){const existing=await c.env.DB.prepare('SELECT id FROM students WHERE username=? AND id!=?').bind(username,id).first<{id:number}>();if(existing)return c.text('Username sudah dipakai siswa lain.',409)}try{const result=password?await c.env.DB.prepare('UPDATE students SET name=?,class_name=?,attendance_number=?,username=?,password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(name,className,attendance,username||null,await hashPassword(password),id).run():await c.env.DB.prepare('UPDATE students SET name=?,class_name=?,attendance_number=?,username=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(name,className,attendance,username||null,id).run();if(!result.meta.changes)return c.text('Siswa tidak ditemukan.',404);await audit(c,'EDIT_STUDENT','student',{studentId:id});return c.redirect('/admin/students/manage')}catch{return c.text('Kelas, nomor absen, atau username sudah digunakan.',409)}});
+        <div class="grid">
+          <div class="card stat">
+            Total Siswa
+            <strong>${d.totalStudents}</strong>
+          </div>
 
-adminRoutes.post('/students/:id/delete',async c=>{const {ok}=await validCsrf(c);if(!ok)return c.text('CSRF invalid',403);const id=Number(c.req.param('id'));const result=await c.env.DB.prepare('DELETE FROM students WHERE id=?').bind(id).run();if(!result.meta.changes)return c.text('Siswa tidak ditemukan.',404);await audit(c,'DELETE_STUDENT','student',{studentId:id});return c.redirect('/admin/students/manage')});
-adminRoutes.post('/students/:id/credentials',async c=>{const {b,ok}=await validCsrf(c);if(!ok)return c.text('CSRF invalid',403);const id=Number(c.req.param('id'));const username=String(b.username||'').trim().toLowerCase(),password=String(b.password||'');if(!/^[a-z0-9._-]{3,40}$/.test(username))return c.text('Username minimal 3 karakter, huruf kecil/angka/./_/- saja.',400);const existing=await c.env.DB.prepare('SELECT id FROM students WHERE username=? AND id!=?').bind(username,id).first<{id:number}>();if(existing)return c.text('Username sudah dipakai siswa lain.',409);if(password){if(password.length<4)return c.text('Password minimal 4 karakter.',400);const result=await c.env.DB.prepare('UPDATE students SET username=?,password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(username,await hashPassword(password),id).run();if(!result.meta.changes)return c.text('Siswa tidak ditemukan.',404)}else{const result=await c.env.DB.prepare('UPDATE students SET username=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(username,id).run();if(!result.meta.changes)return c.text('Siswa tidak ditemukan.',404)}await audit(c,'SET_STUDENT_CREDENTIALS','student',{studentId:id,username});return c.redirect('/admin/students/manage')});
+          <div class="card stat">
+            Sudah Memilih
+            <strong>${d.integrity.votedStudents}</strong>
+          </div>
+
+          <div class="card stat">
+            Belum Memilih
+            <strong>${d.notVoted}</strong>
+          </div>
+
+          <div class="card stat">
+            Partisipasi
+            <strong>${d.turnoutPercentage}%</strong>
+          </div>
+        </div>
+
+        <div
+          class="card"
+          style="margin-top: 18px"
+        >
+          <h2>Status Sistem</h2>
+
+          <p>
+            Election:
+            <span class="badge">
+              ${esc(d.status)}
+            </span>
+
+            ·
+
+            Quick Count:
+            <span class="badge">
+              ${d.enabled ? 'AKTIF' : 'NONAKTIF'}
+            </span>
+          </p>
+
+          <div class="progress">
+            <i
+              style="width: ${d.turnoutPercentage}%"
+            ></i>
+          </div>
+
+          <p>
+            Integritas:
+
+            <strong
+              class="${d.integrity.valid ? 'ok' : 'bad'}"
+            >
+              ${
+                d.integrity.valid
+                  ? 'VALID'
+                  : 'PERLU DIPERIKSA'
+              }
+            </strong>
+
+            (${d.integrity.votedStudents}
+            siswa memilih /
+            ${d.integrity.totalVotes}
+            suara)
+          </p>
+        </div>
+
+        ${csrf(c)}
+      `,
+      {
+        admin: true,
+      },
+    ),
+  );
+});
