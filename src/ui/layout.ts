@@ -59,10 +59,11 @@ export function layout(
 
 const css = `
   :root {
-    --primary: #16a34a;
-    --primary-hover: #15803d;
+    --primary: #a31616;
+    --primary-hover: #801515;
     --primary-light: #dcfce7;
-    --navy: #0f172a;
+    --button: #b21717;
+    --navy: #ffffff;
     --slate-800: #1e293b;
     --slate-600: #475569;
     --slate-400: #94a3b8;
@@ -80,7 +81,7 @@ const css = `
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
-    --shadow-glow: 0 0 20px rgba(34, 197, 94, 0.35);
+    --shadow-glow: 0 0 20px rgba(255, 148, 148, 0.35);
   }
 
   * {
@@ -111,9 +112,9 @@ const css = `
     pointer-events: none;
     z-index: 0;
     background: 
-      radial-gradient(circle at 20% 20%, rgba(34, 197, 94, 0.15) 0%, transparent 40%),
-      radial-gradient(circle at 80% 80%, rgba(56, 189, 248, 0.12) 0%, transparent 40%),
-      radial-gradient(circle at 50% 50%, rgba(21, 128, 61, 0.2) 0%, transparent 60%);
+      radial-gradient(circle at 20% 20%, rgba(197, 34, 34, 0.7) 0%, transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(248, 56, 56, 0.65) 0%, transparent 40%),
+      radial-gradient(circle at 50% 50%, rgba(128, 21, 21, 0.55) 0%, transparent 60%);
     background-size: 200% 200%;
     animation: gradient-move 12s ease infinite alternate;
   }
@@ -181,10 +182,10 @@ const css = `
 
   header {
     height: 72px;
-    background: rgba(6, 21, 11, 0.75);
+    background: rgba(21, 6, 6, 0.75);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border-bottom: 1px solid rgba(34, 197, 94, 0.2);
+    border-bottom: 1px solid rgba(197, 34, 34, 0.2);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -208,10 +209,10 @@ const css = `
   }
 
   .brand span {
-    background: linear-gradient(135deg, #4ade80 0%, #38bdf8 100%);
+    background: linear-gradient(-135deg, #d00000 0%, #32f339 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 2px 8px rgba(34, 197, 94, 0.3));
+    filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.3));
   }
 
   .brand-logo {
@@ -304,12 +305,27 @@ const css = `
   }
 
   .eyebrow {
-    color: var(--sky);
+    background: linear-gradient(135deg, #4ade80 0%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 8px rgba(34, 197, 94, 0.3));
     font-weight: 800;
     font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.15em;
     display: inline-block;
+  }
+
+  #live {
+    background: linear-gradient(135deg, #ef4444 0%, #f97316 100%) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    filter: drop-shadow(0 2px 8px rgba(34, 197, 94, 0.3)) !important;
+    font-weight: 800 !important;
+    font-size: 13px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.15em !important;
+    display: inline-block !important;
   }
 
   .hero {
@@ -342,7 +358,7 @@ const css = `
   .btn,
   button {
     appearance: none;
-    border: none;
+    border: 2px solid transparent;
     outline: none;
     border-radius: var(--radius-md);
     padding: 12px 24px;
@@ -358,13 +374,16 @@ const css = `
     background: var(--primary);
     color: white;
     box-shadow: var(--shadow-md), 0 2px 4px rgba(22, 163, 74, 0.2);
+    transition: 0.3s ease;
   }
 
   .btn:hover,
   button:hover {
-    background: var(--primary-hover);
-    transform: translateY(-2px);
+    background: transparent;
     box-shadow: var(--shadow-lg), var(--shadow-glow);
+    border: 2px solid var(--button);
+    box-sizing: border-box;
+    color: var(--button);
   }
 
   .btn:active,
@@ -409,7 +428,7 @@ const css = `
   }
 
   .card {
-    background: rgba(2, 48, 0, 0.95);
+    background: rgba(48, 0, 0, 0.95);
     backdrop-filter: blur(20px);
     border: 1px solid rgba(254, 255, 254, 1);
     border-radius: var(--radius-lg);
@@ -419,10 +438,14 @@ const css = `
     box-shadow: var(--shadow-lg);
   }
 
+  .stat {
+    color: #ffffff;
+  }
+
   .stat strong {
     font-size: 42px;
     font-weight: 800;
-    color: var(--navy);
+    color: #ffffff;
     display: block;
     line-height: 1.1;
     letter-spacing: -0.03em;
@@ -509,9 +532,18 @@ const css = `
     border: 1.5px solid #e2e8f0;
     border-radius: var(--radius-md);
     background: #ffffff;
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: 'Courier New', 'Courier', monospace;
     font-size: 14px;
     color: var(--navy);
+    transition: .25s;
+  }
+
+  #public-inputtext {
+    width: 95%;
+  }
+
+  #public-inputtext:focus {
+    width: 100%;
   }
 
   input:focus,
@@ -519,7 +551,7 @@ const css = `
   textarea:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+    box-shadow: 0 0 0 4px rgba(197, 34, 34, 0.15);
   }
 
   textarea {
