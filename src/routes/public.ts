@@ -873,9 +873,6 @@ publicRoutes.get('/vote', async (c) => {
                         )}
 
                         <br>
-
-                        &amp;
-
                         <br>
 
                         ${esc(
@@ -885,28 +882,6 @@ publicRoutes.get('/vote', async (c) => {
                         )}
                     </h2>
 
-                    <details>
-                        <summary>
-                            Visi & Misi
-                        </summary>
-
-                        <p>
-                            ${esc(
-                                String(
-                                    candidate.vision,
-                                ),
-                            )}
-                        </p>
-
-                        <p>
-                            ${esc(
-                                String(
-                                    candidate.mission,
-                                ),
-                            )}
-                        </p>
-                    </details>
-
                     <button
                         onclick="pick(
                             ${Number(candidate.id)},
@@ -914,7 +889,7 @@ publicRoutes.get('/vote', async (c) => {
                             '${esc(names)}'
                         )"
                     >
-                        Pilih ${candidateNumber}
+                        Pilih
                     </button>
 
                 </article>
