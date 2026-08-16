@@ -42,7 +42,7 @@ export function layout(
                   <a href="/admin/audit">Audit</a>
                   <form method="post" action="/admin/logout" style="display:inline;margin:0">
                     <input type="hidden" name="csrf" value="${esc(opts.csrfToken || '')}">
-                    <button class="secondary" style="padding:8px 14px;font-size:13px">Logout</button>
+                    <button class="secondary" style="padding:8px 14px;font-size:14px">Logout</button>
                   </form>
                 </nav>
               `
@@ -53,6 +53,35 @@ export function layout(
         <main class="${opts.wide ? 'wide' : ''} ${opts.admin ? 'admin-page' : ''}">
           ${content}
         </main>
+
+        <script>
+          if (location.pathname === '/admin/students/import') {
+            const importButton = document.getElementById('send');
+            importButton.addEventListener('click', async (event) => {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              importButton.disabled = true;
+              const size = 2;
+              try {
+                for (let i = 0; i < rows.length; i += size) {
+                  importButton.textContent = 'Mengimpor ' + Math.min(i + size, rows.length) + '/' + rows.length + '…';
+                  const response = await fetch('/admin/api/students/import', {
+                    method: 'POST', headers: {'content-type': 'application/json', 'X-CSRF-Token': CSRF}, body: JSON.stringify({rows: rows.slice(i, i + size)})
+                  });
+                  const text = await response.text();
+                  let data = {};
+                  try { data = JSON.parse(text); } catch {}
+                  if (!response.ok) throw Error(data.error || 'Server gagal memproses batch ini (HTTP ' + response.status + ').');
+                }
+                location = '/admin/students';
+              } catch (error) {
+                statusBox.textContent = error.message || 'Import gagal.';
+                importButton.disabled = false;
+                importButton.textContent = 'Upload & Import Siswa';
+              }
+            });
+          }
+        </script>
 
         <footer>
           <p>Dibuat oleh <strong>Manuel Kristo Jaftoran</strong> &bull; <strong>Xavier Cedric XI-3</strong> &bull; <strong>Evan Wangsaputra XI-2</strong></p>
