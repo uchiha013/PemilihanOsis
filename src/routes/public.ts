@@ -476,7 +476,7 @@ publicRoutes.get('/', (c) => {
     const error = c.req.query('error');
 
     const html = `
-        <section class="hero login-hero">
+        <section class="hero">
 
             <img
                 class="login-banner"
