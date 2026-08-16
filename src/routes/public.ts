@@ -873,7 +873,6 @@ publicRoutes.get('/vote', async (c) => {
                         )}
 
                         <br>
-                        <br>
 
                         ${esc(
                             String(
