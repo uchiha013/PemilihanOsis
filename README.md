@@ -1,6 +1,15 @@
 # Sistem Pemilihan Ketua & Wakil Ketua OSIS
 
-Aplikasi Cloudflare Workers + D1 dengan QR siswa, surat suara anonim, anti-double-vote di database, dashboard panitia, dan Quick Count agregat. UI responsif untuk HP, laptop, TV, dan proyektor.
+Aplikasi Cloudflare Workers + D1 untuk pemilihan OSIS: login siswa, surat suara anonim, pencegahan double vote di database, dashboard panitia, monitor bilik, dan Quick Count agregat. UI responsif untuk HP, laptop, TV, dan proyektor.
+
+## Fitur utama
+
+- Login siswa dengan username dan password, lalu akses ke surat suara satu kali.
+- Foto paslon lokal pada `public/images/paslon1.jpeg` dan `public/images/paslon2.jpeg`.
+- Poster `public/images/homepage.jpeg` pada halaman login, dengan tata letak desktop 16:9 tanpa scroll panjang.
+- Halaman sukses menampilkan hitung mundur 5 detik sebelum kembali otomatis ke halaman utama.
+- Monitor status per bilik (`/status/1` s.d. `/status/8`) dan bilik guru (`/status/guru`).
+- Quick Count publik dengan mode pengungkapan hasil yang dapat diatur.
 
 ## Jaminan privasi dan integritas
 
@@ -65,7 +74,7 @@ npx wrangler deploy --dry-run
 npm run deploy
 ```
 
-`seed.sql` berisi 10 siswa dan dua paslon dummy. Untuk development:
+`seed.sql` berisi 10 siswa dan dua paslon dummy, termasuk URL foto `/images/paslon1.jpeg` dan `/images/paslon2.jpeg`. Aset dalam folder `public/` disajikan oleh konfigurasi `assets.directory` di `wrangler.jsonc`. Untuk development:
 
 ```powershell
 npx wrangler d1 execute pemilihan-osis --local --file=./seed.sql
@@ -76,6 +85,15 @@ Jangan seed siswa dummy ke produksi jika akan mengimpor data asli. Buat admin pr
 ## Turnstile
 
 Login menggunakan email admin dan dibatasi lima kegagalan per kombinasi IP/email per 15 menit. Variabel Turnstile disediakan sebagai titik integrasi. Bila diperlukan, buat widget di Cloudflare, simpan dengan `npx wrangler secret put TURNSTILE_SECRET_KEY`, dan lakukan siteverify server-side sebelum autentikasi. Secret tidak boleh masuk frontend.
+
+## Akun dan akses panitia
+
+Ada dua peran akun pada tabel `admins`:
+
+- `super`: akses penuh ke dashboard, data siswa, kandidat, hasil, pengaturan, dan audit.
+- `bilik`: setelah login langsung diarahkan ke `/status`. Navigasi hanya menampilkan **Status Bilik** dan **Logout**; seluruh route `/admin` selain logout ditolak.
+
+Halaman status dan API status memerlukan sesi panitia. Peran akun dikelola langsung pada database oleh operator yang berwenang. Jangan menyimpan password panitia di `README.md`, seed, atau repository.
 
 ## Prosedur panitia
 
@@ -90,9 +108,10 @@ Login menggunakan email admin dan dibatasi lima kegagalan per kombinasi IP/email
 
 ### Alur TPS
 
-1. Buka `/scan` di perangkat panitia. Jika browser tidak mendukung `BarcodeDetector`, gunakan kamera bawaan HP untuk membuka URL QR.
-2. Cocokkan identitas singkat, lalu siswa memilih dan mengonfirmasi.
-3. Halaman sukses tidak menampilkan pilihan. Tekan **Pilih Siswa Berikutnya** untuk menghapus konteks siswa dan kembali ke scanner.
+1. Siswa membuka halaman utama dan login menggunakan username serta password yang diberikan panitia.
+2. Siswa memilih paslon dan mengonfirmasi pilihan.
+3. Halaman sukses tidak menampilkan pilihan dan otomatis kembali ke halaman utama setelah 5 detik. Tombol **Selesai** dapat dipakai untuk kembali lebih cepat.
+4. Panitia bilik masuk melalui `/admin/login`; akun peran `bilik` otomatis diarahkan ke `/status` untuk memantau partisipasi.
 
 ### Penutupan
 
@@ -143,6 +162,8 @@ Di `/admin/settings`, admin wajib mengetik `RESET PEMILIHAN`. Proses mengubah st
 - **Vote ditolak:** cek status `OPEN`, rentang waktu, kandidat, QR, dan status siswa.
 - **Integritas tidak valid:** tutup election, backup, jangan edit manual, lalu audit database.
 - **Session expired:** login ulang; sesi berlaku delapan jam.
+- **Login panitia bilik gagal:** pastikan email/password benar dan kolom `role` akun bernilai `bilik`.
+- **Foto/poster tidak tampil:** pastikan berkas tersedia di `public/images/` dan deploy ulang Worker agar aset statis ikut terunggah.
 
 ## Struktur
 
@@ -154,6 +175,7 @@ src/
   ui/         layout responsif
   utils/      crypto dan HTTP
 migrations/   schema D1
+public/images/ poster login dan foto paslon
 tests/        invariant keamanan
 ```
 
