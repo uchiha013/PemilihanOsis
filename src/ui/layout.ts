@@ -1,829 +1,1532 @@
-import { esc } from '../utils/http';
+import { Hono } from 'hono';
+import QRCode from 'qrcode';
+import type { AppEnv } from '../types';
 
-export function layout(
-  title: string,
-  content: string,
-  opts: { admin?: boolean; wide?: boolean; login?: boolean; bilik?: boolean; csrfToken?: string } = {},
-) {
-  return `
-    <!doctype html>
-    <html lang="id">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>${esc(title)}</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-        <style>${css}</style>
-      </head>
+import { layout } from '../ui/layout';
+import {
+    body,
+    esc,
+    ip,
+    jsonError,
+} from '../utils/http';
 
-      <body class="${opts.admin ? 'admin-theme' : ''} ${opts.login ? 'login-page' : ''}">
-        <!-- Background Glowing Particles (Pure CSS) -->
-        <div class="bg-glow"></div>
+import { qrMatrixToPng } from '../utils/png';
+import { requireAdmin } from '../auth/session';
 
-        <header>
-          <a href="/" class="brand">
-            THE NEXT <span>AUDEAMUS</span>
-          </a>
+import {
+    randomToken,
+    sha256,
+    verifyPassword,
+} from '../utils/crypto';
 
-          ${
-            opts.admin
-              ? `
-                <nav>
-                  ${
-                    opts.bilik
-                      ? '<a href="/status">Status Bilik</a>'
-                      : `
-                        <a href="/admin">Dashboard</a>
-                        <a href="/admin/students">Siswa</a>
-                        <a href="/admin/students/manage">CRUD Siswa</a>
-                        <a href="/admin/candidates">Kandidat</a>
-                        <a href="/admin/results">Hasil</a>
-                        <a href="/quick-count">Quick Count</a>
-                        <a href="/status">Status Bilik</a>
-                        <a href="/admin/settings">Pengaturan</a>
-                        <a href="/admin/audit">Audit</a>
-                      `
-                  }
-                  <form method="post" action="/admin/logout" style="display:inline;margin:0">
-                    <input type="hidden" name="csrf" value="${esc(opts.csrfToken || '')}">
-                    <button class="secondary" style="padding:8px 14px;font-size:14px">Logout</button>
-                  </form>
-                </nav>
-              `
-              : ''
-          }
-        </header>
+import {
+    castAnonymousVote,
+    electionState,
+    findVoter,
+} from '../services/voting';
 
-        <main class="${opts.wide ? 'wide' : ''} ${opts.admin ? 'admin-page' : ''}">
-          ${content}
-        </main>
+import { quickCount } from '../services/quick-count';
+
+
+// ============================================================
+// ROUTER
+// ============================================================
+
+export const publicRoutes = new Hono<AppEnv>();
+
+
+// ============================================================
+// MIDDLEWARE
+// ============================================================
+
+publicRoutes.use('/quick-count');
+publicRoutes.use('/api/public/quick-count');
+
+publicRoutes.use('/status', requireAdmin);
+publicRoutes.use('/status/*', requireAdmin);
+publicRoutes.use('/api/status/*', requireAdmin);
+
+
+// ============================================================
+// CONFIG
+// ============================================================
+
+const BILIK_COUNT = 8;
+
+
+// Sesuaikan format nama kelas jika diperlukan.
+// Contoh:
+// Bilik 1 -> X1, XI1, XII1
+// Bilik 2 -> X2, XI2, XII2
+function bilikClasses(n: number): string[] {
+    return [
+        `X${n}`,
+        `XI${n}`,
+        `XII${n}`,
+    ];
+}
+
+// ============================================================
+// STATUS BILIK
+// ============================================================
+
+publicRoutes.get('/status', (c) => {
+    const links = Array.from(
+        { length: BILIK_COUNT },
+        (_, index) => index + 1,
+    )
+        .map(
+            (n) => `
+                <a class="btn" href="/status/${n}">
+                    Bilik ${n}
+                </a>
+            `,
+        )
+        .join('');
+
+    const html = `
+        <div class="eyebrow">
+            MONITOR ANTI-GOLPUT
+        </div>
+
+        <h1>Pilih Bilik</h1>
+
+        <p>
+            Bilik N memantau kelas XN, XIN, XIIN.
+            Contoh: Bilik 1 memantau X1, XI1, XII1.
+            Bilik Guru memantau data dengan kelas GURU.
+        </p>
+
+        <div
+            class="actions"
+            style="flex-wrap: wrap"
+        >
+            ${links}
+            <a class="btn secondary" href="/status/guru">Bilik Guru</a>
+        </div>
+    `;
+
+    return c.html(
+        layout(
+            'Status Bilik',
+            html,
+            {
+                admin: true,
+                bilik: true,
+                csrfToken: c.get('csrfToken'),
+            },
+        ),
+    );
+});
+
+
+publicRoutes.get('/status/guru', (c) => {
+    const html = `
+        <div class="eyebrow">MONITOR ANTI-GOLPUT · BILIK GURU</div>
+        <h1>Status Pemilih — Guru</h1>
+        <div class="grid" id="summary"></div>
+        <div id="content" style="margin-top:18px"><div class="card">Memuat data...</div></div>
+        <p id="updated" class="muted"></p>
+        <script>
+            const safe = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+            async function load() {
+                try {
+                    const response = await fetch('/api/status/guru');
+                    if (!response.ok) throw new Error();
+                    render(await response.json());
+                    document.querySelector('#updated').textContent = 'Terakhir diperbarui: ' + new Date().toLocaleTimeString('id-ID');
+                } catch {
+                    document.querySelector('#updated').textContent = 'Koneksi terputus. Mencoba memperbarui kembali…';
+                }
+                setTimeout(load, 5000);
+            }
+            function render(rows) {
+                const voted = rows.filter((teacher) => teacher.status === 'voted').length;
+                const error = rows.filter((teacher) => teacher.status === 'error').length;
+                document.querySelector('#summary').innerHTML = '<div class="card stat"><span>Total Guru</span><strong>' + rows.length + '</strong></div><div class="card stat"><span>Sudah Memilih</span><strong>' + voted + '</strong></div><div class="card stat"><span>Belum Memilih</span><strong>' + (rows.length - voted - error) + '</strong></div><div class="card stat"><span>Akun Belum Siap</span><strong>' + error + '</strong></div>';
+                const labels = { voted: 'Sudah Memilih', error: 'Akun Belum Siap', not_voted: 'Belum Memilih' };
+                const icons = { voted: '✅', error: '⚠️', not_voted: '❌' };
+                const rowsHtml = rows.map((teacher) => '<tr><td style="font-size:22px">' + icons[teacher.status] + '</td><td>' + safe(teacher.name) + '</td><td>' + safe(teacher.className) + '</td><td>' + labels[teacher.status] + '</td></tr>').join('');
+                document.querySelector('#content').innerHTML = rows.length ? '<div class="table-wrap"><table><thead><tr><th></th><th>Nama</th><th>Keterangan</th><th>Status</th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div>' : '<div class="card">Belum ada data guru.</div>';
+            }
+            load();
+        </script>
+    `;
+    return c.html(layout('Status Bilik Guru', html, { admin: true, bilik: true, wide: true, csrfToken: c.get('csrfToken') }));
+});
+
+publicRoutes.get('/status/:bilik', (c) => {
+    const bilik = Number(c.req.param('bilik'));
+
+    if (
+        !Number.isInteger(bilik) ||
+        bilik < 1 ||
+        bilik > BILIK_COUNT
+    ) {
+        return c.text(
+            'Bilik tidak valid (1-8).',
+            400,
+        );
+    }
+
+    const classes = bilikClasses(bilik);
+
+    const html = `
+        <div class="eyebrow">
+            MONITOR ANTI-GOLPUT · BILIK ${bilik}
+        </div>
+
+        <h1>
+            Status Pemilih —
+            ${classes.join(' / ')}
+        </h1>
+
+        <div
+            class="grid"
+            id="summary"
+        ></div>
+
+        <div
+            id="content"
+            style="margin-top: 18px"
+        >
+            <div class="card">
+                Memuat data...
+            </div>
+        </div>
+
+        <p
+            id="updated"
+            class="muted"
+        ></p>
 
         <script>
-          if (location.pathname === '/admin/students/import') {
-            const importButton = document.getElementById('send');
-            importButton.addEventListener('click', async (event) => {
-              event.preventDefault();
-              event.stopImmediatePropagation();
-              importButton.disabled = true;
-              const size = 2;
-              try {
-                for (let i = 0; i < rows.length; i += size) {
-                  importButton.textContent = 'Mengimpor ' + Math.min(i + size, rows.length) + '/' + rows.length + '…';
-                  const response = await fetch('/admin/api/students/import', {
-                    method: 'POST', headers: {'content-type': 'application/json', 'X-CSRF-Token': CSRF}, body: JSON.stringify({rows: rows.slice(i, i + size)})
-                  });
-                  const text = await response.text();
-                  let data = {};
-                  try { data = JSON.parse(text); } catch {}
-                  if (!response.ok) throw Error(data.error || 'Server gagal memproses batch ini (HTTP ' + response.status + ').');
+            const bilik = ${bilik};
+
+            const safe = (value) =>
+                String(value).replace(
+                    /[&<>"']/g,
+                    (character) => ({
+                        '&': '&amp;',
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        '"': '&quot;',
+                        "'": '&#39;',
+                    }[character])
+                );
+
+            async function load() {
+                try {
+                    const response = await fetch(
+                        '/api/status/' + bilik
+                    );
+
+                    if (!response.ok) {
+                        throw new Error();
+                    }
+
+                    const rows = await response.json();
+
+                    render(rows);
+
+                    document.querySelector('#updated')
+                        .textContent =
+                        'Terakhir diperbarui: ' +
+                        new Date().toLocaleTimeString('id-ID');
+
+                } catch (error) {
+                    document.querySelector('#updated')
+                        .textContent =
+                        'Koneksi terputus. ' +
+                        'Mencoba memperbarui kembali…';
                 }
-                location = '/admin/students';
-              } catch (error) {
-                statusBox.textContent = error.message || 'Import gagal.';
-                importButton.disabled = false;
-                importButton.textContent = 'Upload & Import Siswa';
-              }
-            });
-          }
+
+                setTimeout(load, 5000);
+            }
+
+            function render(rows) {
+                const icon = (status) => {
+                    if (status === 'voted') {
+                        return '✅';
+                    }
+
+                    if (status === 'error') {
+                        return '⚠️';
+                    }
+
+                    return '❌';
+                };
+
+                const label = (status) => {
+                    if (status === 'voted') {
+                        return 'Sudah Memilih';
+                    }
+
+                    if (status === 'error') {
+                        return 'Akun Belum Siap';
+                    }
+
+                    return 'Belum Memilih';
+                };
+
+                const voted = rows.filter(
+                    (student) => student.status === 'voted'
+                ).length;
+
+                const error = rows.filter(
+                    (student) => student.status === 'error'
+                ).length;
+
+                document.querySelector('#summary')
+                    .innerHTML = \`
+                        <div class="card stat">
+                            <span>Total Siswa</span>
+                            <strong>\${rows.length}</strong>
+                        </div>
+
+                        <div class="card stat">
+                            <span>Sudah Memilih</span>
+                            <strong>\${voted}</strong>
+                        </div>
+
+                        <div class="card stat">
+                            <span>Belum Memilih</span>
+                            <strong>
+                                \${rows.length - voted - error}
+                            </strong>
+                        </div>
+
+                        <div class="card stat">
+                            <span>Akun Belum Siap</span>
+                            <strong>\${error}</strong>
+                        </div>
+                    \`;
+
+                let html = \`
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>Nama</th>
+                                    <th>Kelas</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                \`;
+
+                for (const student of rows) {
+                    html += \`
+                        <tr>
+                            <td style="font-size: 22px">
+                                \${icon(student.status)}
+                            </td>
+
+                            <td>
+                                \${safe(student.name)}
+                            </td>
+
+                            <td>
+                                \${safe(student.className)}
+                            </td>
+
+                            <td>
+                                \${label(student.status)}
+                            </td>
+                        </tr>
+                    \`;
+                }
+
+                html += \`
+                            </tbody>
+                        </table>
+                    </div>
+                \`;
+
+                document.querySelector('#content')
+                    .innerHTML = rows.length
+                        ? html
+                        : \`
+                            <div class="card">
+                                Belum ada data siswa
+                                untuk kelas bilik ini.
+                            </div>
+                        \`;
+            }
+
+            load();
         </script>
-
-        <footer>
-          <p>Dibuat oleh <strong>Manuel Kristo Jaftoran</strong> &bull; <strong>Xavier Cedric XI-3</strong> &bull; <strong>Evan Wangsaputra XI-2</strong></p>
-        </footer>
-      </body>
-    </html>
-  `;
-}
-
-const css = `
-  :root {
-    --primary: #a31616;
-    --primary-hover: #801515;
-    --primary-light: #dcfce7;
-    --button: #b21717;
-    --navy: #172033;
-    --slate-800: #1e293b;
-    --slate-600: #475569;
-    --slate-400: #94a3b8;
-    --slate-100: #f1f5f9;
-    --sky: #38bdf8;
-    --red: #ef4444;
-    --red-light: #fef2f2;
-    --amber: #f59e0b;
-    
-    --radius-sm: 8px;
-    --radius-md: 14px;
-    --radius-lg: 20px;
-    --radius-full: 9999px;
-    
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    --shadow-lg: 0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
-    --shadow-glow: 0 0 20px rgba(255, 148, 148, 0.35);
-  }
-
-  * {
-    box-sizing: border-box;
-    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
-  }
-
-  body {
-    margin: 0;
-    padding: 0;
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    color: #ffffff;
-    min-height: 100vh;
-    background: #06150b;
-    display: flex;
-    flex-direction: column;
-    overflow-x: hidden;
-    position: relative;
-  }
-
-  body.admin-theme {
-    background: #f5f7fb;
-    color: var(--navy);
-  }
-  body.admin-theme .bg-glow {
-    display: none;
-  }
-
-  /* =========================
-     PURE CSS BACKGROUND ANIMATION
-     ========================= */
-
-  .bg-glow {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-    background: 
-      radial-gradient(circle at 20% 20%, rgba(197, 34, 34, 0.7) 0%, transparent 40%),
-      radial-gradient(circle at 80% 80%, rgba(248, 56, 56, 0.65) 0%, transparent 40%),
-      radial-gradient(circle at 50% 50%, rgba(128, 21, 21, 0.55) 0%, transparent 60%);
-    background-size: 200% 200%;
-    animation: gradient-move 12s ease infinite alternate;
-  }
-
-  /* Dot Partikel Murni CSS menggunakan radial-gradient */
-  .bg-glow::before,
-  .bg-glow::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image: 
-      radial-gradient(3px 3px at 20px 30px, rgba(74, 222, 128, 0.8), transparent),
-      radial-gradient(4px 4px at 40px 70px, rgba(56, 189, 248, 0.6), transparent),
-      radial-gradient(2px 2px at 90px 40px, rgba(255, 255, 255, 0.9), transparent),
-      radial-gradient(3px 3px at 160px 120px, rgba(74, 222, 128, 0.7), transparent),
-      radial-gradient(4px 4px at 230px 190px, rgba(56, 189, 248, 0.8), transparent),
-      radial-gradient(3px 3px at 310px 80px, rgba(74, 222, 128, 0.6), transparent);
-    background-repeat: repeat;
-    background-size: 350px 350px;
-  }
-
-  .bg-glow::before {
-    animation: float-up-pure 8s linear infinite;
-  }
-
-  .bg-glow::after {
-    background-position: 100px 150px;
-    animation: float-up-pure 14s linear infinite reverse;
-    opacity: 0.6;
-  }
-
-  @keyframes float-up-pure {
-    0% {
-      transform: translateY(0) scale(0.9);
-      opacity: 0.4;
-    }
-    50% {
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-150px) scale(1.1);
-      opacity: 0.2;
-    }
-  }
-
-  @keyframes gradient-move {
-    0% { background-position: 0% 50%; }
-    100% { background-position: 100% 50%; }
-  }
-
-  @keyframes flow-up {
-    0% {
-      transform: translateY(40px);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-
-  /* =========================
-     HEADER & NAVIGATION
-     ========================= */
-
-  header {
-    height: 72px;
-    background: rgba(21, 6, 6, 0.75);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border-bottom: 1px solid rgba(197, 34, 34, 0.2);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 max(4vw, 24px);
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
-  }
-
-  .brand {
-    font-size: 20px;
-    font-weight: 800;
-    color: #ffffff;
-    text-decoration: none;
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    text-shadow: 0 0 12px rgba(255, 255, 255, 0.1);
-  }
-
-  .brand span {
-    background: linear-gradient(-135deg, #d00000 0%, #32f339 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.3));
-  }
-
-  .brand-logo {
-    height: 32px; 
-    width: auto;
-    object-fit: contain;
-    filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.4)); /* Efek glow tipis biar makin keren */
-}
-
-  nav {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    overflow-x: auto;
-    padding: 4px;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(34, 197, 94, 0.3) transparent;
-  }
-
-  nav a {
-    color: var(--slate-400);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 14px;
-    padding: 8px 14px;
-    border-radius: var(--radius-sm);
-    white-space: nowrap;
-    border: 1px solid transparent;
-  }
-
-  nav a:hover {
-    color: #ffffff;
-    background: rgba(34, 197, 94, 0.15);
-    border-color: rgba(34, 197, 94, 0.3);
-    box-shadow: 0 0 12px rgba(34, 197, 94, 0.2);
-  }
-
-  /* =========================
-     MAIN CONTENT
-     ========================= */
-
-  main {
-    max-width: 1100px;
-    width: 100%;
-    margin: 36px auto;
-    padding: 0 24px;
-    flex: 1;
-    position: relative;
-    z-index: 1;
-  }
-
-  main.wide {
-    max-width: 1400px;
-  }
-
-  footer {
-    text-align: center;
-    color: rgba(255, 255, 255, 0.7);
-    padding: 16px 12px;
-    font-size: 14px;
-    position: relative;
-    z-index: 1;
-  }
-
-  footer strong {
-    color: #fff;
-    font-weight: 600;
-  }
-
-  /* Footer di halaman admin ada di atas background terang, bukan gelap
-     — jadi ikut digelapkan supaya tetap terbaca. */
-  body.admin-theme footer {
-    color: var(--slate-600);
-  }
-  body.admin-theme footer strong {
-    color: var(--navy);
-  }
-
-  /* =========================
-     TYPOGRAPHY & HERO
-     ========================= */
-
-  h1 {
-    font-size: clamp(32px, 5vw, 54px);
-    font-weight: 800;
-    line-height: 1.1;
-    color: #ffffff;
-    letter-spacing: -0.03em;
-    margin: 0.3em 0;
-    text-shadow: 0 2px 10px rgba(0,0,0,0.2);
-  }
-
-  /* h1 admin ada langsung di atas background (bukan di dalam kartu),
-     jadi ikut digelapkan supaya tidak hilang di background terang. */
-  .admin-page h1 {
-    color: var(--navy);
-    text-shadow: none;
-  }
-
-  .admin-page p,
-  .admin-page .stat strong {
-    color: var(--navy);
-  }
-
-  h2 {
-    color: var(--navy);
-    font-size: 24px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    margin-top: 0;
-  }
-
-  .eyebrow {
-    background: linear-gradient(135deg, #4ade80 0%, #38bdf8 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 2px 8px rgba(34, 197, 94, 0.3));
-    font-weight: 800;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.15em;
-    display: inline-block;
-  }
-
-  #live {
-    background: linear-gradient(135deg, #ef4444 0%, #f97316 100%) !important;
-    -webkit-background-clip: text !important;
-    -webkit-text-fill-color: transparent !important;
-    filter: drop-shadow(0 2px 8px rgba(34, 197, 94, 0.3)) !important;
-    font-weight: 800 !important;
-    font-size: 13px !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.15em !important;
-    display: inline-block !important;
-  }
-
-  .hero {
-    text-align: center;
-    padding: 2vh 2vw;
-    max-width: 800px;
-    margin: 0 auto;
-    animation: flow-up 1.2s ease-out forwards;
-  }
-
-  .hero p {
-    font-size: 18px;
-    color: rgba(255, 255, 255, 0.85);
-    line-height: 1.6;
-    margin-bottom: 40px;
-  }
-
-  /* Halaman login dirancang untuk layar landscape 16:9 tanpa scroll. */
-  body.login-page { height: 100svh; overflow: hidden; }
-  .login-page header { height: 56px; flex: 0 0 56px; }
-  .login-page main { max-width: none; margin: 0 auto; padding: clamp(8px, 1.2vh, 14px) 24px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-  .login-page footer { flex: 0 0 auto; padding: 6px 12px 8px; font-size: 11px; }
-  .login-hero { width: min(100%, 1100px); max-width: none; padding: 0; display: flex; flex-direction: column; align-items: center; }
-  .login-banner { display: block; width: min(74vw, 900px, calc(33vh * 2.406)); height: auto; margin: 0 auto clamp(8px, 1.5vh, 16px); border-radius: var(--radius-lg); border: 2px solid rgba(255, 255, 255, 0.75); box-shadow: var(--shadow-lg); }
-  .login-hero h1 { font-size: clamp(30px, 4.2vw, 54px); margin: 0 0 6px; }
-  .login-hero p { max-width: 900px; margin: 0 0 clamp(10px, 1.5vh, 16px); font-size: clamp(14px, 1.25vw, 18px); line-height: 1.4; }
-  .login-hero .eyebrow { margin-bottom: 6px; }
-  .login-hero form.card { width: min(440px, 94vw); margin: 0; padding: 12px 28px 16px; }
-  .login-hero form.card label { margin: 8px 0 4px; font-size: 12px; }
-  .login-hero form.card input { padding: 7px 12px; }
-  .login-hero form.card button { width: 60%; margin-top: 12px !important; padding: 10px 16px; }
-
-  @media (max-height: 800px) and (min-width: 769px) {
-    .login-banner { width: min(74vw, 900px, calc(27vh * 2.406)); }
-    .login-hero p { margin-bottom: 8px; }
-    .login-hero form.card { padding-top: 8px; padding-bottom: 10px; }
-  }
-
-  /* =========================
-     BUTTONS & ACTIONS
-     ========================= */
-
-  .actions {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: 32px;
-  }
-
-  .btn,
-  button {
-    appearance: none;
-    border: 2px solid transparent;
-    outline: none;
-    border-radius: var(--radius-md);
-    padding: 12px 24px;
-    font-weight: 700;
-    font-size: 14px;
-    font-family: inherit;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    background: var(--primary);
-    color: white;
-    box-shadow: var(--shadow-md), 0 2px 4px rgba(22, 163, 74, 0.2);
-    transition: 0.3s ease;
-  }
-
-  .btn:hover,
-  button:hover {
-    background: transparent;
-    box-shadow: var(--shadow-lg), var(--shadow-glow);
-    border: 2px solid var(--button);
-    box-sizing: border-box;
-    color: var(--button);
-  }
-
-  .btn:active,
-  button:active {
-    transform: translateY(0);
-  }
-
-  .btn.secondary,
-  button.secondary {
-    background: rgba(255, 255, 255, 0.9);
-    color: var(--navy);
-    box-shadow: var(--shadow-sm);
-    border: 1px solid rgba(0, 0, 0, 0.05);
-  }
-
-  .btn.secondary:hover,
-  button.secondary:hover {
-    background: #ffffff;
-    color: var(--primary-hover);
-    box-shadow: var(--shadow-md);
-  }
-
-  .btn.danger,
-  button.danger {
-    background: var(--red);
-    box-shadow: var(--shadow-md), 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .btn.danger:hover,
-  button.danger:hover {
-    background: #dc2626;
-  }
-
-  /* =========================
-     GRID & CARD
-     ========================= */
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 20px;
-  }
-
-  .card {
-    background: rgba(48, 0, 0, 0.95);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(254, 255, 254, 1);
-    border-radius: var(--radius-lg);
-    padding: 28px;
-    margin-top: 20px;
-    padding-top: 8px;
-    box-shadow: var(--shadow-lg);
-  }
-
-  .card h2,
-  .card p,
-  .card details,
-  .card summary {
-    color: #ffffff;
-  }
-
-  .admin-page .card h2,
-  .admin-page .card p,
-  .admin-page .card details,
-  .admin-page .card summary {
-    color: var(--navy);
-  }
-
-  /* Halaman admin pakai kartu terang — teks di dalamnya (h2, angka .stat,
-     label polos, dsb) didesain untuk background terang, jadi kartu gelap
-     bikin teks nyaris tak kelihatan. Halaman publik (beranda, quick count
-     proyektor) tetap pakai kartu gelap sesuai desain aslinya. */
-  .admin-page .card {
-    background: #ffffff;
-    border: 1px solid var(--slate-100);
-  }
-
-  .stat strong {
-    font-size: 42px;
-    font-weight: 800;
-    color: #ffffff;
-    display: block;
-    line-height: 1.1;
-    letter-spacing: -0.03em;
-  }
-
-  /* =========================
-     STATUS & BADGES
-     ========================= */
-
-  .muted { color: var(--slate-400); }
-  .ok { color: var(--primary); font-weight: 600; }
-  .bad { color: var(--red); font-weight: 600; }
-
-  .alert {
-    padding: 16px 20px;
-    border-radius: var(--radius-md);
-    background: #fffbeb;
-    border: 1px solid #fef3c7;
-    color: #92400e;
-    font-weight: 500;
-    margin: 20px 0;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 12px;
-    border-radius: var(--radius-full);
-    background: var(--slate-100);
-    color: var(--slate-600);
-    font-weight: 700;
-    font-size: 12px;
-  }
-
-  .badge.green {
-    background: var(--primary-light);
-    color: #15803d;
-  }
-
-  .badge.red {
-    background: var(--red-light);
-    color: #b91c1c;
-  }
-
-  /* =========================
-     PROGRESS BAR
-     ========================= */
-
-  .progress {
-    height: 10px;
-    background: var(--slate-100);
-    border-radius: var(--radius-full);
-    overflow: hidden;
-    padding: 2px;
-  }
-
-  .progress i {
-    display: block;
-    height: 100%;
-    border-radius: var(--radius-full);
-    background: linear-gradient(90deg, var(--primary), #38bdf8);
-  }
-
-  /* =========================
-     FORM ELEMENTS
-     ========================= */
-
-  label {
-    font-weight: 700;
-    font-size: 14px;
-    color: #ffffffcc;
-    display: block;
-    margin: 16px 0 6px;
-  }
-
-  /* Label form di halaman admin ada di atas kartu putih, bukan kartu
-     hijau gelap — jadi ikut digelapkan supaya tidak hilang seperti h1. */
-  .admin-page label {
-    color: var(--navy);
-  }
-
-  input,
-  select,
-  textarea {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1.5px solid #e2e8f0;
-    border-radius: var(--radius-md);
-    background: #ffffff;
-    font-family: 'Courier New', 'Courier', monospace;
-    font-size: 14px;
-    color: var(--navy);
-    transition: .25s;
-  }
-
-  #public-inputtext {
-    width: 95%;
-  }
-
-  #public-inputtext:focus {
-    width: 100%;
-  }
-
-  input:focus,
-  select:focus,
-  textarea:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 4px rgba(197, 34, 34, 0.15);
-  }
-
-  textarea {
-    min-height: 120px;
-    resize: vertical;
-  }
-
-  form.card {
-    max-width: 440px;
-    margin: 0 auto;
-  }
-
-  /* =========================
-     TABLES
-     ========================= */
-
-  .table-wrap {
-    overflow: hidden;
-    border-radius: var(--radius-lg);
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    box-shadow: var(--shadow-lg);
-    background: white;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-  }
-
-  th,
-  td {
-    text-align: left;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--slate-100);
-    font-size: 14px;
-    color: var(--navy);
-  }
-
-  th {
-    background: #f8fafc;
-    color: var(--slate-600);
-    font-weight: 700;
-    text-transform: uppercase;
-    font-size: 12px;
-    letter-spacing: 0.05em;
-  }
-
-  tr:last-child td {
-    border-bottom: none;
-  }
-
-  tr:hover td {
-    background: #f8fafc;
-  }
-
-  /* =========================
-     CANDIDATE CARD
-     ========================= */
-
-  .candidate {
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .candidate::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 6px;
-    background: linear-gradient(90deg, var(--primary), var(--sky));
-  }
-
-  .candidate img {
-    width: clamp(180px, 16vw, 240px);
-    height: clamp(180px, 16vw, 240px);
-    object-fit: cover;
-    border-radius: 50%;
-    background: var(--slate-100);
-    border: 4px solid #ffffff;
-    box-shadow: var(--shadow-md);
-    margin-bottom: 12px;
-  }
-
-  .num {
-    font-size: 36px;
-    font-weight: 800;
-    color: var(--primary);
-    line-height: 1;
-    margin-bottom: 8px;
-  }
-
-  /* =========================
-     DIALOG & MODALS
-     ========================= */
-
-  dialog {
-    border: none;
-    border-radius: var(--radius-lg);
-    padding: 32px;
-    max-width: 480px;
-    width: 90%;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    background: white;
-    color: var(--navy);
-  }
-
-  dialog::backdrop {
-    background: rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(4px);
-  }
-
-  /* =========================
-     SCREEN & RESPONSIVE
-     ========================= */
-
-  .screen h1 {
-    font-size: clamp(36px, 6vw, 72px);
-  }
-
-  .screen .stat strong {
-    font-size: clamp(36px, 6vw, 72px);
-  }
-
-  @media (max-width: 768px) {
-    body.login-page { height: auto; overflow: auto; }
-    .login-page main { display: block; overflow: visible; }
-    .login-banner { width: 100%; }
-
-    header {
-      height: auto;
-      align-items: stretch;
-      gap: 12px;
-      padding: 16px;
-      flex-direction: column;
+    `;
+
+    return c.html(
+        layout(
+            `Status Bilik ${bilik}`,
+            html,
+            {
+                admin: true,
+                bilik: true,
+                wide: true,
+                csrfToken: c.get('csrfToken'),
+            },
+        ),
+    );
+});
+
+
+// ============================================================
+// API — STATUS BILIK
+// ============================================================
+
+publicRoutes.get('/api/status/guru', async (c) => {
+    const rows = await c.env.DB.prepare(`
+        SELECT name, class_name, attendance_number, has_voted, username, password_hash
+        FROM students
+        WHERE UPPER(class_name) = 'GURU'
+        ORDER BY attendance_number
+    `).all<{
+        name: string;
+        attendance_number: number;
+        has_voted: number;
+        username: string | null;
+        password_hash: string | null;
+    }>();
+    return c.json(rows.results.map((teacher) => ({
+        name: teacher.name,
+        className: `Guru · No. ${teacher.attendance_number}`,
+        status: teacher.has_voted ? 'voted' : (!teacher.username || !teacher.password_hash) ? 'error' : 'not_voted',
+    })));
+});
+
+publicRoutes.get(
+    '/api/status/:bilik',
+    async (c) => {
+        const bilik = Number(
+            c.req.param('bilik'),
+        );
+
+        if (
+            !Number.isInteger(bilik) ||
+            bilik < 1 ||
+            bilik > BILIK_COUNT
+        ) {
+            return jsonError(
+                c,
+                400,
+                'Bilik tidak valid.',
+            );
+        }
+
+        const classes = bilikClasses(bilik);
+
+        const rows = await c.env.DB
+            .prepare(`
+                SELECT
+                    name,
+                    class_name,
+                    attendance_number,
+                    has_voted,
+                    username,
+                    password_hash
+                FROM students
+                WHERE class_name IN (?, ?, ?)
+                ORDER BY
+                    class_name,
+                    attendance_number
+            `)
+            .bind(...classes)
+            .all<{
+                name: string;
+                class_name: string;
+                attendance_number: number;
+                has_voted: number;
+                username: string | null;
+                password_hash: string | null;
+            }>();
+
+        const data = rows.results.map(
+            (student) => ({
+                name: student.name,
+
+                className:
+                    `${student.class_name} · ` +
+                    `Absen ${student.attendance_number}`,
+
+                status:
+                    student.has_voted
+                        ? 'voted'
+                        : !student.username ||
+                          !student.password_hash
+                            ? 'error'
+                            : 'not_voted',
+            }),
+        );
+
+        return c.json(data);
+    },
+);
+
+
+// ============================================================
+// LOGIN PAGE
+// ============================================================
+
+publicRoutes.get('/', (c) => {
+    const error = c.req.query('error');
+
+    const html = `
+        <section class="hero">
+
+            <img
+                class="login-banner"
+                src="/images/homepage.jpeg"
+                alt="Poster Pemilihan Ketua dan Wakil Ketua OSIS 2026/2027"
+            >
+
+            <div class="eyebrow">
+                PEMILU OSIS PERIODE 2026/2027
+            </div>
+
+            <h1>
+                Suara Anda menentukan<br>
+                masa depan AUDEAMUS.
+            </h1>
+
+            <p>
+                Pemilihan Ketua & Wakil Ketua OSIS Periode 2026/2027 
+                dengan sistem daring dengan jaminan keamanan dan kerahasiaan suara.
+            </p>
+
+            <form
+                class="card"
+                method="post"
+                action="/login"
+            >
+
+                ${
+                    error
+                        ? `
+                            <div class="alert">
+                                ${esc(error)}
+                            </div>
+                        `
+                        : ''
+                }
+
+                <label>
+                    Username
+                </label>
+
+                <input
+                    id="public-inputtext"
+                    name="username"
+                    autocomplete="username"
+                    placeholder="Masukkan username Anda"
+                    required
+                    autofocus
+                >
+
+                <label>
+                    Password
+                </label>
+
+                <input
+                    id="public-inputtext"
+                    type="password"
+                    name="password"
+                    autocomplete="current-password"
+                    placeholder="Masukkan password Anda"
+                    required
+                >
+
+                <button
+                    style="margin-top: 25px; width: 60%"
+                >
+                    Masuk & Mulai Memilih
+                </button>
+
+            </form>
+
+        </section>
+    `;
+
+    return c.html(
+        layout(
+            'Pemilihan OSIS',
+            html,
+            { login: true },
+        ),
+    );
+});
+
+
+// ============================================================
+// LOGIN PROCESS
+// ============================================================
+
+publicRoutes.post('/login', async (c) => {
+    const data = await body(c);
+
+    const username = String(
+        data.username || '',
+    )
+        .trim()
+        .toLowerCase();
+
+    const password = String(
+        data.password || '',
+    );
+
+    const fail = (message: string) =>
+        c.redirect(
+            '/?error=' +
+            encodeURIComponent(message),
+        );
+
+    if (!username || !password) {
+        return fail(
+            'Username dan password wajib diisi.',
+        );
     }
 
-    nav {
-      width: 100%;
-      padding-bottom: 4px;
+    const key = await sha256(
+        `${ip(c)}:${username}`,
+    );
+
+    const attempt = await c.env.DB
+        .prepare(`
+            SELECT
+                attempts,
+                window_started_at
+            FROM login_attempts
+            WHERE
+                key_hash = ?
+                AND window_started_at >
+                    datetime('now', '-15 minutes')
+        `)
+        .bind(key)
+        .first<{
+            attempts: number;
+        }>();
+
+    if ((attempt?.attempts ?? 0) >= 5) {
+        return c.html(
+            layout(
+                'Terlalu Banyak Percobaan',
+                `
+                    <div class="card">
+                        <h1>Coba lagi nanti.</h1>
+
+                        <p>
+                            Terlalu banyak percobaan login.
+                        </p>
+                    </div>
+                `,
+            ),
+            429,
+        );
     }
 
-    main {
-      margin-top: 16px;
-      padding: 0 16px;
+    const student = await c.env.DB
+        .prepare(`
+            SELECT
+                id,
+                password_hash,
+                has_voted
+            FROM students
+            WHERE username = ?
+        `)
+        .bind(username)
+        .first<{
+            id: number;
+            password_hash: string | null;
+            has_voted: number;
+        }>();
+
+    const ok =
+        Boolean(student?.password_hash) &&
+        await verifyPassword(
+            password,
+            student!.password_hash!,
+        );
+
+    if (!ok) {
+        await c.env.DB
+            .prepare(`
+                INSERT INTO login_attempts (
+                    key_hash,
+                    attempts,
+                    window_started_at
+                )
+                VALUES (
+                    ?,
+                    1,
+                    CURRENT_TIMESTAMP
+                )
+
+                ON CONFLICT(key_hash)
+                DO UPDATE SET
+                    attempts =
+                        CASE
+                            WHEN window_started_at <=
+                                datetime(
+                                    'now',
+                                    '-15 minutes'
+                                )
+                            THEN 1
+                            ELSE attempts + 1
+                        END,
+
+                    window_started_at =
+                        CASE
+                            WHEN window_started_at <=
+                                datetime(
+                                    'now',
+                                    '-15 minutes'
+                                )
+                            THEN CURRENT_TIMESTAMP
+                            ELSE window_started_at
+                        END
+            `)
+            .bind(key)
+            .run();
+
+        return fail(
+            'Username atau password salah.',
+        );
     }
 
-    th,
-    td {
-      padding: 12px 14px;
+    await c.env.DB
+        .prepare(`
+            DELETE FROM login_attempts
+            WHERE key_hash = ?
+        `)
+        .bind(key)
+        .run();
+
+    if (student!.has_voted) {
+        return fail(
+            'Akun ini sudah digunakan untuk memilih.',
+        );
     }
 
-    .hide-mobile {
-      display: none;
+    const state = await electionState(
+        c.env,
+    );
+
+    if (state?.status !== 'OPEN') {
+        return fail(
+            'Pemilihan belum dibuka. ' +
+            'Status saat ini: ' +
+            (state?.status || '-'),
+        );
     }
-  }
-`;
+
+    const token = randomToken(32);
+
+    const result = await c.env.DB
+        .prepare(`
+            UPDATE students
+            SET qr_token_hash = ?
+            WHERE
+                id = ?
+                AND has_voted = 0
+        `)
+        .bind(
+            await sha256(token),
+            student!.id,
+        )
+        .run();
+
+    if (!result.meta.changes) {
+        return fail(
+            'Gagal memproses login. Coba lagi.',
+        );
+    }
+
+    return c.redirect(
+        `/vote?t=${encodeURIComponent(token)}`,
+    );
+});
+
+
+// ============================================================
+// VOTING PAGE
+// ============================================================
+
+publicRoutes.get('/vote', async (c) => {
+    const token =
+        c.req.query('t') || '';
+
+    const voter = await findVoter(
+        c.env,
+        token,
+    );
+
+    const state = await electionState(
+        c.env,
+    );
+
+    if (!voter) {
+        return c.html(
+            layout(
+                'QR Tidak Valid',
+                `
+                    <div class="card">
+                        <h1>
+                            QR Code tidak valid.
+                        </h1>
+
+                        <p>
+                            QR mungkin sudah diganti
+                            atau tidak dikenali.
+                        </p>
+                    </div>
+                `,
+            ),
+            404,
+        );
+    }
+
+    if (voter.has_voted) {
+        return c.html(
+            layout(
+                'Sudah Memilih',
+                `
+                    <div class="card">
+                        <h1>
+                            Anda sudah menggunakan
+                            hak suara.
+                        </h1>
+                    </div>
+                `,
+            ),
+            409,
+        );
+    }
+
+    if (state?.status !== 'OPEN') {
+        return c.html(
+            layout(
+                'Pemilihan Ditutup',
+                `
+                    <div class="card">
+                        <h1>
+                            Pemilihan belum tersedia.
+                        </h1>
+
+                        <p>
+                            Status saat ini:
+                            ${esc(state?.status)}
+                        </p>
+                    </div>
+                `,
+            ),
+            403,
+        );
+    }
+
+    const candidates = await c.env.DB
+        .prepare(`
+            SELECT *
+            FROM candidates
+            ORDER BY candidate_number
+        `)
+        .all<Record<string, unknown>>();
+
+    const cards = candidates.results
+        .map((candidate) => {
+            const candidateNumber =
+                String(
+                    candidate.candidate_number,
+                ).padStart(2, '0');
+
+            const names =
+                `${candidate.chairman_name} & ` +
+                `${candidate.vice_chairman_name}`;
+
+            return `
+                <article class="card candidate">
+
+                    <div class="num">
+                        ${candidateNumber}
+                    </div>
+
+                    <img
+                        src="${esc(
+                            String(
+                                candidate.photo_url ||
+                                    `/images/paslon${candidateNumber}.jpeg`,
+                            ),
+                        )}"
+                        alt="Foto paslon ${esc(
+                            candidateNumber,
+                        )}"
+                    >
+
+                    <h2>
+                        ${esc(
+                            String(
+                                candidate.chairman_name,
+                            ),
+                        )}
+
+                        <br>
+
+                        &amp;
+
+                        <br>
+
+                        ${esc(
+                            String(
+                                candidate.vice_chairman_name,
+                            ),
+                        )}
+                    </h2>
+
+                    <details>
+                        <summary>
+                            Visi & Misi
+                        </summary>
+
+                        <p>
+                            ${esc(
+                                String(
+                                    candidate.vision,
+                                ),
+                            )}
+                        </p>
+
+                        <p>
+                            ${esc(
+                                String(
+                                    candidate.mission,
+                                ),
+                            )}
+                        </p>
+                    </details>
+
+                    <button
+                        onclick="pick(
+                            ${Number(candidate.id)},
+                            '${esc(candidateNumber)}',
+                            '${esc(names)}'
+                        )"
+                    >
+                        Pilih ${candidateNumber}
+                    </button>
+
+                </article>
+            `;
+        })
+        .join('');
+
+    const html = `
+        <div class="eyebrow">
+            PEMILIHAN KETUA & WAKIL KETUA OSIS
+        </div>
+
+        <h1>
+            Gunakan hak suara Anda
+        </h1>
+
+        <div class="card voter-info">
+            <strong>
+                ${esc(voter.name)}
+            </strong>
+
+            · ${esc(voter.class_name)}
+
+            · Absen ${voter.attendance_number}
+        </div>
+
+        <div
+            class="grid"
+            style="margin-top: 20px"
+        >
+            ${cards}
+        </div>
+
+        <dialog id="confirm">
+
+            <h2>
+                Konfirmasi pilihan
+            </h2>
+
+            <p>
+                Anda memilih
+                <strong id="choice"></strong>.
+            </p>
+
+            <p class="alert">
+                Pilihan tidak dapat diubah
+                setelah dikirim.
+            </p>
+
+            <div class="actions">
+
+                <button
+                    class="secondary"
+                    onclick="confirm.close()"
+                >
+                    Kembali
+                </button>
+
+                <button id="send">
+                    Kirim Suara
+                </button>
+
+            </div>
+
+        </dialog>
+
+        <script>
+            let selected;
+
+            const confirm =
+                document.querySelector('#confirm');
+
+            function pick(
+                id,
+                number,
+                names
+            ) {
+                selected = id;
+
+                document.querySelector(
+                    '#choice'
+                ).textContent =
+                    'PASLON ' +
+                    number +
+                    ' — ' +
+                    names;
+
+                confirm.showModal();
+            }
+
+            document.querySelector(
+                '#send'
+            ).onclick = async () => {
+
+                const button =
+                    document.querySelector('#send');
+
+                button.disabled = true;
+
+                const response = await fetch(
+                    '/api/vote',
+                    {
+                        method: 'POST',
+
+                        headers: {
+                            'content-type':
+                                'application/json',
+                        },
+
+                        body: JSON.stringify({
+                            token:
+                                ${JSON.stringify(token)},
+
+                            candidateId:
+                                selected,
+                        }),
+                    },
+                );
+
+                if (response.ok) {
+                    location.replace(
+                        '/success'
+                    );
+
+                    return;
+                }
+
+                const json =
+                    await response.json();
+
+                alert(
+                    json.error ||
+                    'Suara gagal dikirim',
+                );
+
+                button.disabled = false;
+            };
+        </script>
+    `;
+
+    return c.html(
+        layout(
+            'Pilih Paslon',
+            html,
+        ),
+    );
+});
+
+
+// ============================================================
+// API — CAST VOTE
+// ============================================================
+
+publicRoutes.post(
+    '/api/vote',
+    async (c) => {
+        const data = await body(c);
+
+        const token =
+            String(data.token || '');
+
+        const candidateId =
+            Number(data.candidateId);
+
+        if (!Number.isInteger(candidateId)) {
+            return jsonError(
+                c,
+                400,
+                'Pilihan tidak valid.',
+            );
+        }
+
+        const success =
+            await castAnonymousVote(
+                c.env,
+                token,
+                candidateId,
+            );
+
+        if (!success) {
+            return jsonError(
+                c,
+                409,
+                'Suara tidak dapat diproses. ' +
+                'Token mungkin sudah digunakan ' +
+                'atau pemilihan tidak dibuka.',
+            );
+        }
+
+        return c.json({
+            ok: true,
+        });
+    },
+);
+
+
+// ============================================================
+// SUCCESS PAGE
+// ============================================================
+
+publicRoutes.get('/success', (c) => {
+    const html = `
+        <section class="hero">
+
+            <div class="eyebrow ok">
+                SUARA TEREKAM
+            </div>
+
+            <h1>
+                Terima kasih.
+            </h1>
+
+            <p>
+                Suara Anda telah berhasil direkam.
+            </p>
+
+            <p
+                id="countdown"
+                class="muted"
+            >
+                Kembali ke halaman utama dalam 5 detik.
+            </p>
+
+            <div class="actions">
+                <a
+                    class="btn"
+                    href="/"
+                >
+                    Selesai
+                </a>
+            </div>
+
+        </section>
+
+        <script>
+            history.replaceState(
+                null,
+                '',
+                '/success'
+            );
+
+            let seconds = 5;
+            const countdown = document.querySelector('#countdown');
+            const timer = setInterval(() => {
+                seconds -= 1;
+
+                if (seconds <= 0) {
+                    clearInterval(timer);
+                    location.replace('/');
+                    return;
+                }
+
+                countdown.textContent =
+                    'Kembali ke halaman utama dalam ' +
+                    seconds +
+                    ' detik.';
+            }, 1000);
+        </script>
+    `;
+
+    return c.html(
+        layout(
+            'Terima Kasih',
+            html,
+        ),
+    );
+});
+
+
+// ============================================================
+// QUICK COUNT API
+// ============================================================
+
+publicRoutes.get(
+    '/api/public/quick-count',
+    async (c) => {
+        const data =
+            await quickCount(c.env);
+
+        c.header(
+            'Cache-Control',
+            'public, max-age=3',
+        );
+
+        if (!data.enabled) {
+            return c.json({
+                enabled: false,
+                status: data.status,
+                electionName:
+                    data.electionName,
+                schoolName:
+                    data.schoolName,
+            });
+        }
+
+        if (
+            data.mode ===
+            'PARTICIPATION_ONLY'
+        ) {
+            return c.json({
+                ...data,
+                candidates: [],
+            });
+        }
+
+        if (
+            data.mode ===
+            'PERCENTAGE_ONLY'
+        ) {
+            return c.json({
+                ...data,
+
+                candidates:
+                    data.candidates.map(
+                        ({
+                            votes: _,
+                            chairmanName: _chairmanName,
+                            viceChairmanName: _viceChairmanName,
+                            ...candidate
+                        }) => candidate,
+                    ),
+            });
+        }
+
+        return c.json(data);
+    },
+);
+
+
+// ============================================================
+// QUICK COUNT PAGE
+// ============================================================
+
+publicRoutes.get(
+    '/quick-count',
+    (c) => {
+        const screen =
+            c.req.query('display') ===
+            'screen';
+
+        const html = `
+            <style>
+                #content .card { background: #fff; }
+                #content .card h2, #content .card span, #content .card p, #content .card strong { color: var(--slate-600); }
+                .race-bar { display:flex; height:56px; border-radius:12px; overflow:hidden; margin-top:14px; box-shadow:var(--shadow-sm); }
+                .race-seg { display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:15px; min-width:2px; transition:width .6s ease; }
+                .race-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:16px; justify-content:center; }
+                .race-legend span { display:flex; align-items:center; gap:8px; font-weight:700; color:var(--navy); font-size:14px; }
+                .race-legend i { width:14px; height:14px; border-radius:4px; display:inline-block; }
+                .reveal-fade-in { animation: revealFade .6s ease forwards; }
+                @keyframes revealFade { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+                .beam-stage { position:relative; height:220px; background:radial-gradient(circle at center,#0b1220 0%,#04070d 70%); border-radius:16px; overflow:hidden; margin-top:14px; box-shadow:var(--shadow-lg); }
+                .beam-half { position:absolute; top:0; bottom:0; width:0%; filter:drop-shadow(0 0 18px currentColor); }
+                .beam-half.left { left:0; background:linear-gradient(90deg,transparent,currentColor 70%,#fff); animation: beamGrowLeft 6.8s cubic-bezier(.16,.84,.44,1) forwards; }
+                .beam-half.right { right:0; background:linear-gradient(270deg,transparent,currentColor 70%,#fff); animation: beamGrowRight 6.8s cubic-bezier(.16,.84,.44,1) forwards; }
+                .beam-half::after { content:""; position:absolute; inset:0; background-image: radial-gradient(2px 2px at 10% 20%,#fff,transparent), radial-gradient(2px 2px at 30% 60%,#fff,transparent), radial-gradient(2px 2px at 55% 30%,#fff,transparent), radial-gradient(2px 2px at 75% 70%,#fff,transparent), radial-gradient(2px 2px at 90% 40%,#fff,transparent); opacity:.8; animation: beamSparkle .6s linear infinite; }
+                @keyframes beamSparkle { 0% { opacity:.4; } 50% { opacity:1; } 100% { opacity:.4; } }
+                @keyframes beamGrowLeft { from { width:0%; } to { width:50%; } }
+                @keyframes beamGrowRight { from { width:0%; } to { width:50%; } }
+                .beam-clash { position:absolute; top:50%; left:50%; width:0; height:0; border-radius:50%; background:radial-gradient(circle,#fff 0%,rgba(255,255,255,.6) 30%,transparent 70%); transform:translate(-50%,-50%); opacity:0; animation: beamClash 1.2s ease-out 6.8s forwards; }
+                @keyframes beamClash { 0% { width:0; height:0; opacity:0; } 35% { width:280px; height:280px; opacity:1; } 100% { width:460px; height:460px; opacity:0; } }
+                .beam-vs { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:32px; font-weight:800; color:#fff; text-shadow:0 0 20px rgba(255,255,255,.9),0 0 40px rgba(255,255,255,.5); z-index:5; animation: beamVsPulse 1s ease-in-out infinite alternate; }
+                @keyframes beamVsPulse { from { transform:translate(-50%,-50%) scale(1); } to { transform:translate(-50%,-50%) scale(1.15); } }
+                .beam-label { position:absolute; bottom:14px; font-weight:800; color:#fff; font-size:14px; text-shadow:0 2px 6px rgba(0,0,0,.6); z-index:6; }
+                .beam-label.left { left:20px; }
+                .beam-label.right { right:20px; }
+            </style>
+            <section
+                class="${screen ? 'screen' : ''}"
+            >
+
+                <div class="eyebrow" id="live">
+                    ● LIVE
+                </div>
+
+                <h1 id="title">
+                    QUICK COUNT
+                </h1>
+
+                <p
+                    id="school"
+                    class="muted"
+                ></p>
+
+                <div
+                    id="content"
+                    class="grid"
+                >
+                    <div class="card">
+                        Memuat hasil...
+                    </div>
+                </div>
+
+                <p
+                    id="updated"
+                    class="muted"
+                ></p>
+
+            </section>
+
+            <script>
+                let last;
+                let quickCountToken = 0;
+                const RACE_COLORS = ['#16a34a', '#38bdf8', '#f59e0b', '#f472b6', '#a78bfa', '#fb923c', '#2dd4bf', '#f87171'];
+
+                function renderBeamStage(candidates) {
+                    const c0 = candidates[0], c1 = candidates[1];
+                    return '<div class="card" style="grid-column:1/-1"><h2 style="text-align:center">Pertarungan Suara Sedang Berlangsung…</h2><div class="beam-stage">' +
+                        '<div class="beam-half left" style="color:' + RACE_COLORS[0] + '"></div>' +
+                        '<div class="beam-half right" style="color:' + RACE_COLORS[1] + '"></div>' +
+                        '<div class="beam-clash"></div>' +
+                        '<div class="beam-vs">VS</div>' +
+                        '<div class="beam-label left">Paslon ' + String(c0.candidateNumber).padStart(2, '0') + '</div>' +
+                        '<div class="beam-label right">Paslon ' + String(c1.candidateNumber).padStart(2, '0') + '</div>' +
+                        '</div></div>';
+                }
+
+                function renderPercentBar(candidates) {
+                    return '<div class="card reveal-fade-in" style="grid-column:1/-1"><h2 style="text-align:center">Perolehan Sementara</h2><div class="race-bar">' +
+                        candidates.map((candidate, index) => '<div class="race-seg" style="width:' + (candidate.percentage || 0) + '%;background:' + RACE_COLORS[index % RACE_COLORS.length] + '">' + ((candidate.percentage || 0) >= 8 ? candidate.percentage + '%' : '') + '</div>').join('') +
+                        '</div><div class="race-legend">' +
+                        candidates.map((candidate, index) => '<span><i style="background:' + RACE_COLORS[index % RACE_COLORS.length] + '"></i>Paslon ' + String(candidate.candidateNumber).padStart(2, '0') + ' — ' + (candidate.percentage || 0) + '%</span>').join('') +
+                        '</div></div>';
+                }
+
+                async function load() {
+                    try {
+                        const response =
+                            await fetch(
+                                '/api/public/quick-count'
+                            );
+
+                        if (!response.ok) {
+                            throw new Error();
+                        }
+
+                        const data =
+                            await response.json();
+
+                        last = data;
+
+                        render(data);
+
+                    } catch (error) {
+                        document.querySelector(
+                            '#updated'
+                        ).textContent =
+                            'Koneksi terputus. ' +
+                            'Mencoba memperbarui kembali…';
+                    }
+
+                    const isBeam = last && last.candidates && last.candidates.length === 2 && last.candidates[0] && last.candidates[0].chairmanName === undefined && last.candidates[0].percentage !== undefined;
+                    const baseDelay = Math.max(3000, (last?.refreshInterval || 5) * 1000);
+
+                    setTimeout(
+                        load,
+                        isBeam ? Math.max(baseDelay, 8600) : baseDelay
+                    );
+                }
+
+                function render(data) {
+                    document.querySelector(
+                        '#title'
+                    ).textContent =
+                        data.status === 'CLOSED'
+                            ? 'HASIL AKHIR'
+                            : 'QUICK COUNT — HASIL SEMENTARA';
+
+                    document.querySelector(
+                        '#school'
+                    ).textContent =
+                        data.schoolName || '';
+
+                    const content =
+                        document.querySelector(
+                            '#content'
+                        );
+
+                    const updated =
+                        document.querySelector(
+                            '#updated'
+                        );
+
+                    if (!data.enabled) {
+                        content.innerHTML = \`
+                            <div class="card">
+                                <h2>
+                                    Quick Count
+                                    belum tersedia
+                                </h2>
+                            </div>
+                        \`;
+
+                        return;
+                    }
+
+                    const statsHtml = \`
+                        <div class="card stat">
+                            <span>
+                                Total Pemilih
+                            </span>
+
+                            <strong>
+                                \${data.totalStudents}
+                            </strong>
+                        </div>
+
+                        <div class="card stat">
+                            <span>
+                                Suara Masuk
+                            </span>
+
+                            <strong>
+                                \${data.totalVotes}
+                            </strong>
+                        </div>
+
+                        <div class="card stat">
+                            <span>
+                                Partisipasi
+                            </span>
+
+                            <strong>
+                                \${data.turnoutPercentage}%
+                            </strong>
+
+                            <div class="progress">
+                                <i
+                                    style="
+                                        width:
+                                            \${data.turnoutPercentage}%
+                                    "
+                                ></i>
+                            </div>
+                        </div>
+                    \`;
+
+                    const percentOnly = data.candidates.length > 0 && data.candidates[0].chairmanName === undefined && data.candidates[0].percentage !== undefined;
+
+                    if (percentOnly && data.candidates.length === 2) {
+                        const myToken = ++quickCountToken;
+                        content.innerHTML = statsHtml + renderBeamStage(data.candidates);
+                        setTimeout(() => {
+                            if (myToken !== quickCountToken) return;
+                            content.innerHTML = statsHtml + renderPercentBar(data.candidates);
+                        }, 8000);
+                    } else if (percentOnly) {
+                        quickCountToken++;
+                        content.innerHTML = statsHtml + renderPercentBar(data.candidates);
+                    } else {
+                        quickCountToken++;
+                        let html = statsHtml;
+                        for (const candidate of data.candidates) {
+                            html += \`
+                                <div class="card candidate">
+                                    <div class="num">
+                                        \${String(candidate.candidateNumber).padStart(2, '0')}
+                                    </div>
+
+                                    <h2>
+                                        \${candidate.chairmanName} & \${candidate.viceChairmanName}
+                                    </h2>
+
+                                    \${candidate.percentage !== undefined
+                                        ? \`
+                                            <strong
+                                                style="
+                                                    font-size: 38px
+                                                "
+                                            >
+                                                \${candidate.percentage}%
+                                            </strong>
+                                        \`
+                                        : ''
+                                    }
+
+                                    \${candidate.votes !== undefined
+                                        ? \`
+                                            <p>
+                                                \${candidate.votes}
+                                                suara
+                                            </p>
+                                        \`
+                                        : ''
+                                    }
+
+                                </div>
+                            \`;
+                        }
+                        content.innerHTML = html;
+                    }
+
+                    updated.textContent =
+                        'Terakhir diperbarui: ' +
+                        new Date()
+                            .toLocaleTimeString(
+                                'id-ID'
+                            );
+                }
+
+                load();
+            </script>
+        `;
+
+        return c.html(
+            layout(
+                'Quick Count',
+                html,
+                {
+                    wide: screen,
+                },
+            ),
+        );
+    },
+);
