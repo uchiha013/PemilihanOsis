@@ -1264,6 +1264,23 @@ publicRoutes.get(
                 .race-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:16px; justify-content:center; }
                 .race-legend span { display:flex; align-items:center; gap:8px; font-weight:700; color:var(--navy); font-size:14px; }
                 .race-legend i { width:14px; height:14px; border-radius:4px; display:inline-block; }
+                .reveal-fade-in { animation: revealFade .6s ease forwards; }
+                @keyframes revealFade { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+                .beam-stage { position:relative; height:220px; background:radial-gradient(circle at center,#0b1220 0%,#04070d 70%); border-radius:16px; overflow:hidden; margin-top:14px; box-shadow:var(--shadow-lg); }
+                .beam-half { position:absolute; top:0; bottom:0; width:0%; filter:drop-shadow(0 0 18px currentColor); }
+                .beam-half.left { left:0; background:linear-gradient(90deg,transparent,currentColor 70%,#fff); animation: beamGrowLeft 6.8s cubic-bezier(.16,.84,.44,1) forwards; }
+                .beam-half.right { right:0; background:linear-gradient(270deg,transparent,currentColor 70%,#fff); animation: beamGrowRight 6.8s cubic-bezier(.16,.84,.44,1) forwards; }
+                .beam-half::after { content:""; position:absolute; inset:0; background-image: radial-gradient(2px 2px at 10% 20%,#fff,transparent), radial-gradient(2px 2px at 30% 60%,#fff,transparent), radial-gradient(2px 2px at 55% 30%,#fff,transparent), radial-gradient(2px 2px at 75% 70%,#fff,transparent), radial-gradient(2px 2px at 90% 40%,#fff,transparent); opacity:.8; animation: beamSparkle .6s linear infinite; }
+                @keyframes beamSparkle { 0% { opacity:.4; } 50% { opacity:1; } 100% { opacity:.4; } }
+                @keyframes beamGrowLeft { from { width:0%; } to { width:50%; } }
+                @keyframes beamGrowRight { from { width:0%; } to { width:50%; } }
+                .beam-clash { position:absolute; top:50%; left:50%; width:0; height:0; border-radius:50%; background:radial-gradient(circle,#fff 0%,rgba(255,255,255,.6) 30%,transparent 70%); transform:translate(-50%,-50%); opacity:0; animation: beamClash 1.2s ease-out 6.8s forwards; }
+                @keyframes beamClash { 0% { width:0; height:0; opacity:0; } 35% { width:280px; height:280px; opacity:1; } 100% { width:460px; height:460px; opacity:0; } }
+                .beam-vs { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:32px; font-weight:800; color:#fff; text-shadow:0 0 20px rgba(255,255,255,.9),0 0 40px rgba(255,255,255,.5); z-index:5; animation: beamVsPulse 1s ease-in-out infinite alternate; }
+                @keyframes beamVsPulse { from { transform:translate(-50%,-50%) scale(1); } to { transform:translate(-50%,-50%) scale(1.15); } }
+                .beam-label { position:absolute; bottom:14px; font-weight:800; color:#fff; font-size:14px; text-shadow:0 2px 6px rgba(0,0,0,.6); z-index:6; }
+                .beam-label.left { left:20px; }
+                .beam-label.right { right:20px; }
             </style>
             <section
                 class="${screen ? 'screen' : ''}"
@@ -1300,7 +1317,28 @@ publicRoutes.get(
 
             <script>
                 let last;
+                let quickCountToken = 0;
                 const RACE_COLORS = ['#16a34a', '#38bdf8', '#f59e0b', '#f472b6', '#a78bfa', '#fb923c', '#2dd4bf', '#f87171'];
+
+                function renderBeamStage(candidates) {
+                    const c0 = candidates[0], c1 = candidates[1];
+                    return '<div class="card" style="grid-column:1/-1"><h2 style="text-align:center">Pertarungan Suara Sedang Berlangsung…</h2><div class="beam-stage">' +
+                        '<div class="beam-half left" style="color:' + RACE_COLORS[0] + '"></div>' +
+                        '<div class="beam-half right" style="color:' + RACE_COLORS[1] + '"></div>' +
+                        '<div class="beam-clash"></div>' +
+                        '<div class="beam-vs">VS</div>' +
+                        '<div class="beam-label left">Paslon ' + String(c0.candidateNumber).padStart(2, '0') + '</div>' +
+                        '<div class="beam-label right">Paslon ' + String(c1.candidateNumber).padStart(2, '0') + '</div>' +
+                        '</div></div>';
+                }
+
+                function renderPercentBar(candidates) {
+                    return '<div class="card reveal-fade-in" style="grid-column:1/-1"><h2 style="text-align:center">Perolehan Sementara</h2><div class="race-bar">' +
+                        candidates.map((candidate, index) => '<div class="race-seg" style="width:' + (candidate.percentage || 0) + '%;background:' + RACE_COLORS[index % RACE_COLORS.length] + '">' + ((candidate.percentage || 0) >= 8 ? candidate.percentage + '%' : '') + '</div>').join('') +
+                        '</div><div class="race-legend">' +
+                        candidates.map((candidate, index) => '<span><i style="background:' + RACE_COLORS[index % RACE_COLORS.length] + '"></i>Paslon ' + String(candidate.candidateNumber).padStart(2, '0') + ' — ' + (candidate.percentage || 0) + '%</span>').join('') +
+                        '</div></div>';
+                }
 
                 async function load() {
                     try {
@@ -1328,13 +1366,12 @@ publicRoutes.get(
                             'Mencoba memperbarui kembali…';
                     }
 
+                    const isBeam = last && last.candidates && last.candidates.length === 2 && last.candidates[0] && last.candidates[0].chairmanName === undefined && last.candidates[0].percentage !== undefined;
+                    const baseDelay = Math.max(3000, (last?.refreshInterval || 5) * 1000);
+
                     setTimeout(
                         load,
-                        Math.max(
-                            3000,
-                            (last?.refreshInterval || 5) *
-                                1000
-                        )
+                        isBeam ? Math.max(baseDelay, 8600) : baseDelay
                     );
                 }
 
@@ -1374,7 +1411,7 @@ publicRoutes.get(
                         return;
                     }
 
-                    let html = \`
+                    const statsHtml = \`
                         <div class="card stat">
                             <span>
                                 Total Pemilih
@@ -1416,42 +1453,59 @@ publicRoutes.get(
                     \`;
 
                     const percentOnly = data.candidates.length > 0 && data.candidates[0].chairmanName === undefined && data.candidates[0].percentage !== undefined;
-                    if (percentOnly) {
-                        html += '<div class="card" style="grid-column:1/-1"><h2 style="text-align:center">Perolehan Sementara</h2><div class="race-bar">' + data.candidates.map((candidate, index) => '<div class="race-seg" style="width:' + (candidate.percentage || 0) + '%;background:' + RACE_COLORS[index % RACE_COLORS.length] + '">' + ((candidate.percentage || 0) >= 8 ? candidate.percentage + '%' : '') + '</div>').join('') + '</div><div class="race-legend">' + data.candidates.map((candidate, index) => '<span><i style="background:' + RACE_COLORS[index % RACE_COLORS.length] + '"></i>' + (candidate.percentage || 0) + '%</span>').join('') + '</div></div>';
-                    } else for (
-                        const candidate
-                        of data.candidates
-                    ) {
-                        html += \`
-                            <div class="card candidate">
-                                \${candidate.percentage !== undefined
-                                    ? \`
-                                        <strong
-                                            style="
-                                                font-size: 38px
-                                            "
-                                        >
-                                            \${candidate.percentage}%
-                                        </strong>
-                                    \`
-                                    : ''
-                                }
 
-                                \${candidate.votes !== undefined
-                                    ? \`
-                                        <p>
-                                            \${candidate.votes}
-                                            suara
-                                        </p>
-                                    \`
-                                    : ''
-                                }
+                    if (percentOnly && data.candidates.length === 2) {
+                        const myToken = ++quickCountToken;
+                        content.innerHTML = statsHtml + renderBeamStage(data.candidates);
+                        setTimeout(() => {
+                            if (myToken !== quickCountToken) return;
+                            content.innerHTML = statsHtml + renderPercentBar(data.candidates);
+                        }, 8000);
+                    } else if (percentOnly) {
+                        quickCountToken++;
+                        content.innerHTML = statsHtml + renderPercentBar(data.candidates);
+                    } else {
+                        quickCountToken++;
+                        let html = statsHtml;
+                        for (const candidate of data.candidates) {
+                            html += \`
+                                <div class="card candidate">
+                                    <div class="num">
+                                        \${String(candidate.candidateNumber).padStart(2, '0')}
+                                    </div>
 
-                            </div>
-                        \`;
+                                    <h2>
+                                        \${candidate.chairmanName} & \${candidate.viceChairmanName}
+                                    </h2>
+
+                                    \${candidate.percentage !== undefined
+                                        ? \`
+                                            <strong
+                                                style="
+                                                    font-size: 38px
+                                                "
+                                            >
+                                                \${candidate.percentage}%
+                                            </strong>
+                                        \`
+                                        : ''
+                                    }
+
+                                    \${candidate.votes !== undefined
+                                        ? \`
+                                            <p>
+                                                \${candidate.votes}
+                                                suara
+                                            </p>
+                                        \`
+                                        : ''
+                                    }
+
+                                </div>
+                            \`;
+                        }
+                        content.innerHTML = html;
                     }
-
-                    content.innerHTML = html;
 
                     updated.textContent =
                         'Terakhir diperbarui: ' +
