@@ -42,8 +42,9 @@ export const publicRoutes = new Hono<AppEnv>();
 publicRoutes.use('/quick-count');
 publicRoutes.use('/api/public/quick-count');
 
-publicRoutes.use('/status/*');
-publicRoutes.use('/api/status/*');
+publicRoutes.use('/status', requireAdmin);
+publicRoutes.use('/status/*', requireAdmin);
+publicRoutes.use('/api/status/*', requireAdmin);
 
 
 // ============================================================
@@ -93,6 +94,7 @@ publicRoutes.get('/status', (c) => {
         <p>
             Bilik N memantau kelas XN, XIN, XIIN.
             Contoh: Bilik 1 memantau X1, XI1, XII1.
+            Bilik Guru memantau data dengan kelas GURU.
         </p>
 
         <div
@@ -100,6 +102,7 @@ publicRoutes.get('/status', (c) => {
             style="flex-wrap: wrap"
         >
             ${links}
+            <a class="btn secondary" href="/status/guru">Bilik Guru</a>
         </div>
     `;
 
@@ -109,12 +112,48 @@ publicRoutes.get('/status', (c) => {
             html,
             {
                 admin: true,
+                bilik: true,
                 csrfToken: c.get('csrfToken'),
             },
         ),
     );
 });
 
+
+publicRoutes.get('/status/guru', (c) => {
+    const html = `
+        <div class="eyebrow">MONITOR ANTI-GOLPUT · BILIK GURU</div>
+        <h1>Status Pemilih — Guru</h1>
+        <div class="grid" id="summary"></div>
+        <div id="content" style="margin-top:18px"><div class="card">Memuat data...</div></div>
+        <p id="updated" class="muted"></p>
+        <script>
+            const safe = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+            async function load() {
+                try {
+                    const response = await fetch('/api/status/guru');
+                    if (!response.ok) throw new Error();
+                    render(await response.json());
+                    document.querySelector('#updated').textContent = 'Terakhir diperbarui: ' + new Date().toLocaleTimeString('id-ID');
+                } catch {
+                    document.querySelector('#updated').textContent = 'Koneksi terputus. Mencoba memperbarui kembali…';
+                }
+                setTimeout(load, 5000);
+            }
+            function render(rows) {
+                const voted = rows.filter((teacher) => teacher.status === 'voted').length;
+                const error = rows.filter((teacher) => teacher.status === 'error').length;
+                document.querySelector('#summary').innerHTML = '<div class="card stat"><span>Total Guru</span><strong>' + rows.length + '</strong></div><div class="card stat"><span>Sudah Memilih</span><strong>' + voted + '</strong></div><div class="card stat"><span>Belum Memilih</span><strong>' + (rows.length - voted - error) + '</strong></div><div class="card stat"><span>Akun Belum Siap</span><strong>' + error + '</strong></div>';
+                const labels = { voted: 'Sudah Memilih', error: 'Akun Belum Siap', not_voted: 'Belum Memilih' };
+                const icons = { voted: '✅', error: '⚠️', not_voted: '❌' };
+                const rowsHtml = rows.map((teacher) => '<tr><td style="font-size:22px">' + icons[teacher.status] + '</td><td>' + safe(teacher.name) + '</td><td>' + safe(teacher.className) + '</td><td>' + labels[teacher.status] + '</td></tr>').join('');
+                document.querySelector('#content').innerHTML = rows.length ? '<div class="table-wrap"><table><thead><tr><th></th><th>Nama</th><th>Keterangan</th><th>Status</th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div>' : '<div class="card">Belum ada data guru.</div>';
+            }
+            load();
+        </script>
+    `;
+    return c.html(layout('Status Bilik Guru', html, { admin: true, bilik: true, wide: true, csrfToken: c.get('csrfToken') }));
+});
 
 publicRoutes.get('/status/:bilik', (c) => {
     const bilik = Number(c.req.param('bilik'));
@@ -327,6 +366,7 @@ publicRoutes.get('/status/:bilik', (c) => {
             html,
             {
                 admin: true,
+                bilik: true,
                 wide: true,
                 csrfToken: c.get('csrfToken'),
             },
@@ -338,6 +378,26 @@ publicRoutes.get('/status/:bilik', (c) => {
 // ============================================================
 // API — STATUS BILIK
 // ============================================================
+
+publicRoutes.get('/api/status/guru', async (c) => {
+    const rows = await c.env.DB.prepare(`
+        SELECT name, class_name, attendance_number, has_voted, username, password_hash
+        FROM students
+        WHERE UPPER(class_name) = 'GURU'
+        ORDER BY attendance_number
+    `).all<{
+        name: string;
+        attendance_number: number;
+        has_voted: number;
+        username: string | null;
+        password_hash: string | null;
+    }>();
+    return c.json(rows.results.map((teacher) => ({
+        name: teacher.name,
+        className: `Guru · No. ${teacher.attendance_number}`,
+        status: teacher.has_voted ? 'voted' : (!teacher.username || !teacher.password_hash) ? 'error' : 'not_voted',
+    })));
+});
 
 publicRoutes.get(
     '/api/status/:bilik',
@@ -416,7 +476,13 @@ publicRoutes.get('/', (c) => {
     const error = c.req.query('error');
 
     const html = `
-        <section class="hero">
+        <section class="hero login-hero">
+
+            <img
+                class="login-banner"
+                src="/images/homepage.jpeg"
+                alt="Poster Pemilihan Ketua dan Wakil Ketua OSIS 2026/2027"
+            >
 
             <div class="eyebrow">
                 PEMILU OSIS PERIODE 2026/2027
@@ -489,6 +555,7 @@ publicRoutes.get('/', (c) => {
         layout(
             'Pemilihan OSIS',
             html,
+            { login: true },
         ),
     );
 });
@@ -786,22 +853,17 @@ publicRoutes.get('/vote', async (c) => {
                         ${candidateNumber}
                     </div>
 
-                    ${
-                        candidate.photo_url
-                            ? `
-                                <img
-                                    src="${esc(
-                                        String(
-                                            candidate.photo_url,
-                                        ),
-                                    )}"
-                                    alt="Foto paslon ${esc(
-                                        candidateNumber,
-                                    )}"
-                                >
-                            `
-                            : ''
-                    }
+                    <img
+                        src="${esc(
+                            String(
+                                candidate.photo_url ||
+                                    `/images/paslon${candidateNumber}.jpeg`,
+                            ),
+                        )}"
+                        alt="Foto paslon ${esc(
+                            candidateNumber,
+                        )}"
+                    >
 
                     <h2>
                         ${esc(
@@ -1069,6 +1131,13 @@ publicRoutes.get('/success', (c) => {
                 Suara Anda telah berhasil direkam.
             </p>
 
+            <p
+                id="countdown"
+                class="muted"
+            >
+                Kembali ke halaman utama dalam 5 detik.
+            </p>
+
             <div class="actions">
                 <a
                     class="btn"
@@ -1086,6 +1155,23 @@ publicRoutes.get('/success', (c) => {
                 '',
                 '/success'
             );
+
+            let seconds = 5;
+            const countdown = document.querySelector('#countdown');
+            const timer = setInterval(() => {
+                seconds -= 1;
+
+                if (seconds <= 0) {
+                    clearInterval(timer);
+                    location.replace('/');
+                    return;
+                }
+
+                countdown.textContent =
+                    'Kembali ke halaman utama dalam ' +
+                    seconds +
+                    ' detik.';
+            }, 1000);
         </script>
     `;
 
@@ -1145,6 +1231,8 @@ publicRoutes.get(
                     data.candidates.map(
                         ({
                             votes: _,
+                            chairmanName: _chairmanName,
+                            viceChairmanName: _viceChairmanName,
                             ...candidate
                         }) => candidate,
                     ),
@@ -1168,6 +1256,15 @@ publicRoutes.get(
             'screen';
 
         const html = `
+            <style>
+                #content .card { background: #fff; }
+                #content .card h2, #content .card span, #content .card p, #content .card strong { color: var(--slate-600); }
+                .race-bar { display:flex; height:56px; border-radius:12px; overflow:hidden; margin-top:14px; box-shadow:var(--shadow-sm); }
+                .race-seg { display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:15px; min-width:2px; transition:width .6s ease; }
+                .race-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:16px; justify-content:center; }
+                .race-legend span { display:flex; align-items:center; gap:8px; font-weight:700; color:var(--navy); font-size:14px; }
+                .race-legend i { width:14px; height:14px; border-radius:4px; display:inline-block; }
+            </style>
             <section
                 class="${screen ? 'screen' : ''}"
             >
@@ -1203,6 +1300,7 @@ publicRoutes.get(
 
             <script>
                 let last;
+                const RACE_COLORS = ['#16a34a', '#38bdf8', '#f59e0b', '#f472b6', '#a78bfa', '#fb923c', '#2dd4bf', '#f87171'];
 
                 async function load() {
                     try {
@@ -1317,7 +1415,10 @@ publicRoutes.get(
                         </div>
                     \`;
 
-                    for (
+                    const percentOnly = data.candidates.length > 0 && data.candidates[0].chairmanName === undefined && data.candidates[0].percentage !== undefined;
+                    if (percentOnly) {
+                        html += '<div class="card" style="grid-column:1/-1"><h2 style="text-align:center">Perolehan Sementara</h2><div class="race-bar">' + data.candidates.map((candidate, index) => '<div class="race-seg" style="width:' + (candidate.percentage || 0) + '%;background:' + RACE_COLORS[index % RACE_COLORS.length] + '">' + ((candidate.percentage || 0) >= 8 ? candidate.percentage + '%' : '') + '</div>').join('') + '</div><div class="race-legend">' + data.candidates.map((candidate, index) => '<span><i style="background:' + RACE_COLORS[index % RACE_COLORS.length] + '"></i>' + (candidate.percentage || 0) + '%</span>').join('') + '</div></div>';
+                    } else for (
                         const candidate
                         of data.candidates
                     ) {

@@ -17,6 +17,43 @@ import {
 } from "../utils/crypto";
 import { quickCount } from "../services/quick-count";
 export const adminRoutes = new Hono<AppEnv>();
+
+type ExportStudentRow = {
+  name: string;
+  class_name: string;
+  attendance_number: number;
+  has_voted: number;
+  voted_at: string | null;
+  username: string | null;
+};
+type CandidateRow = {
+  id: number;
+  candidate_number: number;
+  chairman_name: string;
+  vice_chairman_name: string;
+  photo_url: string | null;
+  vision: string | null;
+  mission: string | null;
+};
+type ElectionSettingsRow = {
+  election_name: string;
+  school_name: string;
+  status: string;
+  start_at: string | null;
+  end_at: string | null;
+  quick_count_enabled: number;
+  quick_count_mode: string;
+  quick_count_refresh_interval: number;
+  show_candidate_photos: number;
+  show_final_winner: number;
+};
+type AuditRow = {
+  created_at: string;
+  email: string | null;
+  action: string;
+  target: string;
+  metadata: string | null;
+};
 async function audit(
   c: Context<AppEnv>,
   action: string,
@@ -84,10 +121,10 @@ adminRoutes.post("/login", async (c) => {
       429,
     );
   const admin = await c.env.DB.prepare(
-    "SELECT id,password_hash FROM admins WHERE email=?",
+    "SELECT id,password_hash,role FROM admins WHERE email=?",
   )
     .bind(email)
-    .first<{ id: number; password_hash: string }>();
+    .first<{ id: number; password_hash: string; role: string }>();
   const ok = admin && (await verifyPassword(password, admin.password_hash));
   if (!ok) {
     await c.env.DB.prepare(
@@ -109,7 +146,7 @@ adminRoutes.post("/login", async (c) => {
   await c.env.DB.prepare("DELETE FROM login_attempts WHERE key_hash=?")
     .bind(key)
     .run();
-  return c.redirect("/admin");
+  return c.redirect(admin.role === "bilik" ? "/status" : "/admin");
 });
 adminRoutes.post("/setup", async (c) => {
   const count = await c.env.DB.prepare("SELECT COUNT(*) n FROM admins").first<{
@@ -141,7 +178,7 @@ adminRoutes.use("/*", async (c, next) => {
   const admin = await c.env.DB.prepare("SELECT role FROM admins WHERE id=?")
     .bind(adminId)
     .first<{ role: string }>();
-  if (admin?.role === "bilik") {
+  if (admin?.role === "bilik" && c.req.path !== "/admin/logout") {
     return c.html(
       layout(
         "Akses Ditolak",
@@ -173,7 +210,9 @@ adminRoutes.post("/logout", async (c) => {
 adminRoutes.get("/students", async (c) => {
   const q = (c.req.query("q") || "").trim(),
     klass = c.req.query("class") || "",
-    status = c.req.query("status") || "";
+    status = c.req.query("status") || "",
+    limit = 50,
+    requestedPage = Math.max(1, Number(c.req.query("page")) || 1);
   let sql = "SELECT * FROM students WHERE 1=1",
     args: unknown[] = [];
   if (q) {
@@ -190,9 +229,14 @@ adminRoutes.get("/students", async (c) => {
   if (status === "not") {
     sql += " AND has_voted=0";
   }
-  sql += " ORDER BY class_name,attendance_number LIMIT 1000";
+  const total = await c.env.DB.prepare(
+    sql.replace("SELECT *", "SELECT COUNT(*) AS n"),
+  ).bind(...args).first<{ n: number }>();
+  const pages = Math.max(1, Math.ceil((total?.n || 0) / limit));
+  const page = Math.min(requestedPage, pages);
+  sql += " ORDER BY class_name,attendance_number LIMIT ? OFFSET ?";
   const rows = await c.env.DB.prepare(sql)
-    .bind(...args)
+    .bind(...args, limit, (page - 1) * limit)
     .all<Record<string, unknown>>();
   const classes = await c.env.DB.prepare(
     "SELECT DISTINCT class_name FROM students ORDER BY class_name",
@@ -203,10 +247,18 @@ adminRoutes.get("/students", async (c) => {
         `<tr><td>${esc(s.name)}</td><td>${esc(s.class_name)}</td><td>${s.attendance_number}</td><td><span class="badge ${s.has_voted ? "green" : ""}">${s.has_voted ? "SUDAH" : "BELUM"}</span></td></tr>`,
     )
     .join("");
+  const pageUrl = (target: number) => {
+    const params = new URLSearchParams({ page: String(target) });
+    if (q) params.set("q", q);
+    if (klass) params.set("class", klass);
+    if (status) params.set("status", status);
+    return `/admin/students?${params.toString()}`;
+  };
+  const nav = `<div class="actions" style="justify-content:space-between;margin-top:18px"><span class="muted">Halaman ${page} dari ${pages} · ${total?.n || 0} siswa</span><span>${page > 1 ? `<a class="btn secondary" href="${pageUrl(page - 1)}">← Sebelumnya</a>` : ""} ${page < pages ? `<a class="btn secondary" href="${pageUrl(page + 1)}">Berikutnya →</a>` : ""}</span></div>`;
   return c.html(
     layout(
       "Siswa",
-      `<div class="eyebrow">DATA PEMILIH</div><h1>Manajemen Siswa</h1><div class="actions" style="justify-content:flex-start"><a class="btn" href="/admin/students/import">Import CSV</a><a class="btn secondary" href="/admin/export/students">Export Partisipasi</a></div><form method="get" class="card" style="max-width:none;margin:18px 0;display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px"><input name="q" placeholder="Cari nama" value="${esc(q)}"><select name="class"><option value="">Semua kelas</option>${classes.results.map((x) => `<option ${x.class_name === klass ? "selected" : ""}>${esc(x.class_name)}</option>`).join("")}</select><select name="status"><option value="">Semua status</option><option value="not" ${status === "not" ? "selected" : ""}>Belum</option><option value="voted" ${status === "voted" ? "selected" : ""}>Sudah</option></select><button>Cari</button></form><div class="table-wrap"><table><thead><tr><th>Nama</th><th>Kelas</th><th>Absen</th><th>Status</th></tr></thead><tbody>${trs}</tbody></table></div>${csrf(c)}`,
+      `<div class="eyebrow">DATA PEMILIH</div><h1>Manajemen Siswa</h1><div class="actions" style="justify-content:flex-start"><a class="btn" href="/admin/students/import">Import CSV</a><a class="btn secondary" href="/admin/export/students">Export Partisipasi</a></div><form method="get" class="card" style="max-width:none;margin:18px 0;display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px"><input name="q" placeholder="Cari nama" value="${esc(q)}"><select name="class"><option value="">Semua kelas</option>${classes.results.map((x) => `<option ${x.class_name === klass ? "selected" : ""}>${esc(x.class_name)}</option>`).join("")}</select><select name="status"><option value="">Semua status</option><option value="not" ${status === "not" ? "selected" : ""}>Belum</option><option value="voted" ${status === "voted" ? "selected" : ""}>Sudah</option></select><button>Cari</button></form><div class="table-wrap"><table><thead><tr><th>Nama</th><th>Kelas</th><th>Absen</th><th>Status</th></tr></thead><tbody>${trs}</tbody></table></div>${nav}${csrf(c)}`,
       { admin: true, csrfToken: c.get("csrfToken") },
     ),
   );
@@ -340,7 +392,7 @@ adminRoutes.post("/api/students/import", async (c) => {
 adminRoutes.get("/export/students", async (c) => {
   const r = await c.env.DB.prepare(
     "SELECT name,class_name,attendance_number,has_voted,voted_at,username FROM students ORDER BY class_name,attendance_number",
-  ).all<any>();
+  ).all<ExportStudentRow>();
   const quote = (x: unknown) => `"${String(x ?? "").replace(/"/g, '""')}"`;
   const csv = [
     "Nama,Kelas,Absen,Username,Status Memilih,Waktu Memilih",
@@ -367,11 +419,11 @@ adminRoutes.get("/export/students", async (c) => {
 adminRoutes.get("/candidates", async (c) => {
   const rows = await c.env.DB.prepare(
     "SELECT * FROM candidates ORDER BY candidate_number",
-  ).all<any>();
+  ).all<CandidateRow>();
   return c.html(
     layout(
       "Kandidat",
-      `<div class="eyebrow">PASANGAN CALON</div><h1>Manajemen Kandidat</h1><div class="grid">${rows.results.map((x: any) => `<form class="card" method="post" style="margin:0"><fieldset><legend>Paslon ${x.candidate_number}</legend><input type="hidden" name="id" value="${x.id}"><label>Nomor urut</label><input type="number" value="${x.candidate_number}" readonly><label>Ketua</label><input name="chairman" value="${esc(x.chairman_name)}" required><label>Wakil</label><input name="vice" value="${esc(x.vice_chairman_name)}" required><label>URL Foto</label><input name="photo" value="${esc(x.photo_url)}"><label>Visi</label><textarea name="vision">${esc(x.vision)}</textarea><label>Misi</label><textarea name="mission">${esc(x.mission)}</textarea></fieldset><button style="margin-top:18px">Simpan Paslon ${x.candidate_number}</button></form>`).join("")}</div>${csrf(c)}`,
+      `<div class="eyebrow">PASANGAN CALON</div><h1>Manajemen Kandidat</h1><div class="grid">${rows.results.map((x) => `<form class="card" method="post" style="margin:0"><fieldset><legend>Paslon ${x.candidate_number}</legend><input type="hidden" name="id" value="${x.id}"><label>Nomor urut</label><input type="number" value="${x.candidate_number}" readonly><label>Ketua</label><input name="chairman" value="${esc(x.chairman_name)}" required><label>Wakil</label><input name="vice" value="${esc(x.vice_chairman_name)}" required><label>URL Foto</label><input name="photo" value="${esc(x.photo_url)}"><label>Visi</label><textarea name="vision">${esc(x.vision)}</textarea><label>Misi</label><textarea name="mission">${esc(x.mission)}</textarea></fieldset><button style="margin-top:18px">Simpan Paslon ${x.candidate_number}</button></form>`).join("")}</div>${csrf(c)}`,
       { admin: true, csrfToken: c.get("csrfToken") },
     ),
   );
@@ -405,7 +457,7 @@ adminRoutes.get("/results", async (c) => {
   return c.html(
     layout(
       "Hasil Admin",
-      `<div class="eyebrow">HASIL INTERNAL</div><h1>Perolehan Suara</h1><div class="grid"><div class="card stat">Total siswa<strong>${d.totalStudents}</strong></div><div class="card stat">Suara masuk<strong>${d.totalVotes}</strong></div><div class="card stat">Belum memilih<strong>${d.notVoted}</strong></div></div><div class="grid" style="margin-top:18px">${d.candidates.map((x: any) => `<div class="card candidate"><div class="num">${String(x.candidateNumber).padStart(2, "0")}</div><h2>${esc(x.chairmanName)} & ${esc(x.viceChairmanName)}</h2><strong>${x.votes ?? 0} suara</strong><div class="progress"><i style="width:${d.totalVotes ? ((x.votes ?? 0) / d.totalVotes) * 100 : 0}%"></i></div><p>${d.totalVotes ? (((x.votes ?? 0) / d.totalVotes) * 100).toFixed(2) : "0.00"}%</p></div>`).join("")}</div><p>Integritas: <strong class="${d.integrity.valid ? "ok" : "bad"}">${d.integrity.valid ? "VALID" : "PERLU DIPERIKSA"}</strong></p>`,
+      `<div class="eyebrow">HASIL INTERNAL</div><h1>Perolehan Suara</h1><div class="grid"><div class="card stat">Total siswa<strong>${d.totalStudents}</strong></div><div class="card stat">Suara masuk<strong>${d.totalVotes}</strong></div><div class="card stat">Belum memilih<strong>${d.notVoted}</strong></div></div><div class="grid" style="margin-top:18px">${d.candidates.map((x) => `<div class="card candidate"><div class="num">${String(x.candidateNumber).padStart(2, "0")}</div><h2>${esc(x.chairmanName)} & ${esc(x.viceChairmanName)}</h2><strong>${x.votes ?? 0} suara</strong><div class="progress"><i style="width:${d.totalVotes ? ((x.votes ?? 0) / d.totalVotes) * 100 : 0}%"></i></div><p>${d.totalVotes ? (((x.votes ?? 0) / d.totalVotes) * 100).toFixed(2) : "0.00"}%</p></div>`).join("")}</div><p>Integritas: <strong class="${d.integrity.valid ? "ok" : "bad"}">${d.integrity.valid ? "VALID" : "PERLU DIPERIKSA"}</strong></p>`,
       { admin: true, csrfToken: c.get("csrfToken") },
     ),
   );
@@ -413,7 +465,8 @@ adminRoutes.get("/results", async (c) => {
 adminRoutes.get("/settings", async (c) => {
   const s = await c.env.DB.prepare(
     "SELECT * FROM election_settings WHERE id=1",
-  ).first<any>();
+  ).first<ElectionSettingsRow>();
+  if (!s) return c.text("Pengaturan pemilihan belum tersedia.", 404);
   return c.html(
     layout(
       "Pengaturan",
@@ -473,7 +526,7 @@ adminRoutes.post("/reset", async (c) => {
 adminRoutes.get("/audit", async (c) => {
   const r = await c.env.DB.prepare(
     "SELECT a.*,u.email FROM audit_logs a LEFT JOIN admins u ON u.id=a.admin_id ORDER BY a.id DESC LIMIT 500",
-  ).all<any>();
+  ).all<AuditRow>();
   return c.html(
     layout(
       "Audit Log",

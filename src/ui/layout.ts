@@ -3,7 +3,7 @@ import { esc } from '../utils/http';
 export function layout(
   title: string,
   content: string,
-  opts: { admin?: boolean; wide?: boolean; csrfToken?: string } = {},
+  opts: { admin?: boolean; wide?: boolean; login?: boolean; bilik?: boolean; csrfToken?: string } = {},
 ) {
   return `
     <!doctype html>
@@ -18,7 +18,7 @@ export function layout(
         <style>${css}</style>
       </head>
 
-      <body class="${opts.admin ? 'admin-theme' : ''}">
+      <body class="${opts.admin ? 'admin-theme' : ''} ${opts.login ? 'login-page' : ''}">
         <!-- Background Glowing Particles (Pure CSS) -->
         <div class="bg-glow"></div>
 
@@ -31,15 +31,21 @@ export function layout(
             opts.admin
               ? `
                 <nav>
-                  <a href="/admin">Dashboard</a>
-                  <a href="/admin/students">Siswa</a>
-                  <a href="/admin/students/manage">CRUD Siswa</a>
-                  <a href="/admin/candidates">Kandidat</a>
-                  <a href="/admin/results">Hasil</a>
-                  <a href="/quick-count">Quick Count</a>
-                  <a href="/status">Status Bilik</a>
-                  <a href="/admin/settings">Pengaturan</a>
-                  <a href="/admin/audit">Audit</a>
+                  ${
+                    opts.bilik
+                      ? '<a href="/status">Status Bilik</a>'
+                      : `
+                        <a href="/admin">Dashboard</a>
+                        <a href="/admin/students">Siswa</a>
+                        <a href="/admin/students/manage">CRUD Siswa</a>
+                        <a href="/admin/candidates">Kandidat</a>
+                        <a href="/admin/results">Hasil</a>
+                        <a href="/quick-count">Quick Count</a>
+                        <a href="/status">Status Bilik</a>
+                        <a href="/admin/settings">Pengaturan</a>
+                        <a href="/admin/audit">Audit</a>
+                      `
+                  }
                   <form method="post" action="/admin/logout" style="display:inline;margin:0">
                     <input type="hidden" name="csrf" value="${esc(opts.csrfToken || '')}">
                     <button class="secondary" style="padding:8px 14px;font-size:14px">Logout</button>
@@ -97,7 +103,7 @@ const css = `
     --primary-hover: #801515;
     --primary-light: #dcfce7;
     --button: #b21717;
-    --navy: #ffffff;
+    --navy: #172033;
     --slate-800: #1e293b;
     --slate-600: #475569;
     --slate-400: #94a3b8;
@@ -127,7 +133,7 @@ const css = `
     margin: 0;
     padding: 0;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    color: var(--navy);
+    color: #ffffff;
     min-height: 100vh;
     background: #06150b;
     display: flex;
@@ -136,10 +142,9 @@ const css = `
     position: relative;
   }
 
-  /* Halaman admin: background terang, bukan hijau gelap + partikel.
-     Halaman publik (beranda, quick count proyektor) tetap seperti semula. */
   body.admin-theme {
-    background: #f5f8fb;
+    background: #f5f7fb;
+    color: var(--navy);
   }
   body.admin-theme .bg-glow {
     display: none;
@@ -355,6 +360,11 @@ const css = `
     text-shadow: none;
   }
 
+  .admin-page p,
+  .admin-page .stat strong {
+    color: var(--navy);
+  }
+
   h2 {
     color: var(--navy);
     font-size: 24px;
@@ -400,6 +410,27 @@ const css = `
     color: rgba(255, 255, 255, 0.85);
     line-height: 1.6;
     margin-bottom: 40px;
+  }
+
+  /* Halaman login dirancang untuk layar landscape 16:9 tanpa scroll. */
+  body.login-page { height: 100svh; overflow: hidden; }
+  .login-page header { height: 56px; flex: 0 0 56px; }
+  .login-page main { max-width: none; margin: 0 auto; padding: clamp(8px, 1.2vh, 14px) 24px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .login-page footer { flex: 0 0 auto; padding: 6px 12px 8px; font-size: 11px; }
+  .login-hero { width: min(100%, 1100px); max-width: none; padding: 0; display: flex; flex-direction: column; align-items: center; }
+  .login-banner { display: block; width: min(74vw, 900px, calc(33vh * 2.406)); height: auto; margin: 0 auto clamp(8px, 1.5vh, 16px); border-radius: var(--radius-lg); border: 2px solid rgba(255, 255, 255, 0.75); box-shadow: var(--shadow-lg); }
+  .login-hero h1 { font-size: clamp(30px, 4.2vw, 54px); margin: 0 0 6px; }
+  .login-hero p { max-width: 900px; margin: 0 0 clamp(10px, 1.5vh, 16px); font-size: clamp(14px, 1.25vw, 18px); line-height: 1.4; }
+  .login-hero .eyebrow { margin-bottom: 6px; }
+  .login-hero form.card { width: min(440px, 94vw); margin: 0; padding: 12px 28px 16px; }
+  .login-hero form.card label { margin: 8px 0 4px; font-size: 12px; }
+  .login-hero form.card input { padding: 7px 12px; }
+  .login-hero form.card button { width: 60%; margin-top: 12px !important; padding: 10px 16px; }
+
+  @media (max-height: 800px) and (min-width: 769px) {
+    .login-banner { width: min(74vw, 900px, calc(27vh * 2.406)); }
+    .login-hero p { margin-bottom: 8px; }
+    .login-hero form.card { padding-top: 8px; padding-bottom: 10px; }
   }
 
   /* =========================
@@ -495,6 +526,20 @@ const css = `
     margin-top: 20px;
     padding-top: 8px;
     box-shadow: var(--shadow-lg);
+  }
+
+  .card h2,
+  .card p,
+  .card details,
+  .card summary {
+    color: #ffffff;
+  }
+
+  .admin-page .card h2,
+  .admin-page .card p,
+  .admin-page .card details,
+  .admin-page .card summary {
+    color: var(--navy);
   }
 
   /* Halaman admin pakai kartu terang — teks di dalamnya (h2, angka .stat,
@@ -658,6 +703,7 @@ const css = `
     padding: 16px 20px;
     border-bottom: 1px solid var(--slate-100);
     font-size: 14px;
+    color: var(--navy);
   }
 
   th {
@@ -698,8 +744,8 @@ const css = `
   }
 
   .candidate img {
-    width: 130px;
-    height: 130px;
+    width: clamp(180px, 16vw, 240px);
+    height: clamp(180px, 16vw, 240px);
     object-fit: cover;
     border-radius: 50%;
     background: var(--slate-100);
@@ -728,6 +774,7 @@ const css = `
     width: 90%;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
     background: white;
+    color: var(--navy);
   }
 
   dialog::backdrop {
@@ -748,6 +795,10 @@ const css = `
   }
 
   @media (max-width: 768px) {
+    body.login-page { height: auto; overflow: auto; }
+    .login-page main { display: block; overflow: visible; }
+    .login-banner { width: 100%; }
+
     header {
       height: auto;
       align-items: stretch;
