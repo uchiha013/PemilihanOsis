@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-=======
-/* eslint-disable @typescript-eslint/no-explicit-any -- D1 row shapes are narrowed immediately after each query. */
->>>>>>> origin/perbaikan-cvs
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AppEnv } from "../types";
@@ -54,7 +50,6 @@ adminRoutes.get("/login", (c) =>
   c.html(
     layout(
       "Login Admin",
-<<<<<<< HEAD
       `<form class="card" method="post">
         <div class="eyebrow" style="margin-top: 20px">AREA PANITIA</div>
         <h1>Login Admin</h1>
@@ -65,9 +60,6 @@ adminRoutes.get("/login", (c) =>
         <input type="password" name="password" autocomplete="current-password" placeholder="Masukkan password admin" required>
         <button style="margin-top:25px;width:100%">Masuk Panel Admin</button>
       </form>`,
-=======
-      `<form class="card" method="post"><div class="eyebrow">AREA PANITIA</div><h1>Login Admin</h1>${c.req.query("expired") ? '<div class="alert">Sesi berakhir. Silakan login kembali.</div>' : ""}<label>Email</label><input type="email" name="email" autocomplete="email" placeholder="admin@sekolah.sch.id" required><label>Password</label><input type="password" name="password" autocomplete="current-password" required><button style="margin-top:18px;width:100%">Masuk</button></form>`,
->>>>>>> origin/perbaikan-cvs
     ),
   ),
 );
@@ -142,10 +134,7 @@ adminRoutes.post("/setup", async (c) => {
     .run();
   return c.json({ ok: true, message: "Admin pertama dibuat." });
 });
-<<<<<<< HEAD
 
-=======
->>>>>>> origin/perbaikan-cvs
 adminRoutes.use("/*", requireAdmin);
 adminRoutes.use("/*", async (c, next) => {
   const adminId = c.get("adminId");
@@ -163,10 +152,7 @@ adminRoutes.use("/*", async (c, next) => {
   }
   await next();
 });
-<<<<<<< HEAD
   
-=======
->>>>>>> origin/perbaikan-cvs
 adminRoutes.get("/", async (c) => {
   const d = await quickCount(c.env);
   return c.html(
@@ -187,7 +173,6 @@ adminRoutes.post("/logout", async (c) => {
 adminRoutes.get("/students", async (c) => {
   const q = (c.req.query("q") || "").trim(),
     klass = c.req.query("class") || "",
-<<<<<<< HEAD
     status = c.req.query("status") || "";
   let sql = "SELECT * FROM students WHERE 1=1",
     args: unknown[] = [];
@@ -222,60 +207,6 @@ adminRoutes.get("/students", async (c) => {
     layout(
       "Siswa",
       `<div class="eyebrow">DATA PEMILIH</div><h1>Manajemen Siswa</h1><div class="actions" style="justify-content:flex-start"><a class="btn" href="/admin/students/import">Import CSV</a><a class="btn secondary" href="/admin/export/students">Export Partisipasi</a></div><form method="get" class="card" style="max-width:none;margin:18px 0;display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px"><input name="q" placeholder="Cari nama" value="${esc(q)}"><select name="class"><option value="">Semua kelas</option>${classes.results.map((x) => `<option ${x.class_name === klass ? "selected" : ""}>${esc(x.class_name)}</option>`).join("")}</select><select name="status"><option value="">Semua status</option><option value="not" ${status === "not" ? "selected" : ""}>Belum</option><option value="voted" ${status === "voted" ? "selected" : ""}>Sudah</option></select><button>Cari</button></form><div class="table-wrap"><table><thead><tr><th>Nama</th><th>Kelas</th><th>Absen</th><th>Status</th></tr></thead><tbody>${trs}</tbody></table></div>${csrf(c)}`,
-=======
-    status = c.req.query("status") || "",
-    limit = 50;
-  let where = "WHERE 1=1",
-    args: unknown[] = [];
-  if (q) {
-    where += " AND name LIKE ?";
-    args.push(`%${q}%`);
-  }
-  if (klass) {
-    where += " AND class_name=?";
-    args.push(klass);
-  }
-  if (status === "voted") where += " AND has_voted=1";
-  if (status === "not") where += " AND has_voted=0";
-  const total = await c.env.DB.prepare(
-      `SELECT COUNT(*) n FROM students ${where}`,
-    )
-      .bind(...args)
-      .first<{ n: number }>(),
-    pages = Math.max(1, Math.ceil((total?.n || 0) / limit)),
-    requestedPage = Math.max(1, Number(c.req.query("page")) || 1),
-    page = Math.min(requestedPage, pages),
-    offset = (page - 1) * limit,
-    rows = await c.env.DB.prepare(
-      `SELECT * FROM students ${where} ORDER BY class_name,attendance_number LIMIT ? OFFSET ?`,
-    )
-      .bind(...args, limit, offset)
-      .all<Record<string, unknown>>(),
-    classes = await c.env.DB.prepare(
-      "SELECT DISTINCT class_name FROM students ORDER BY class_name",
-    ).all<{ class_name: string }>();
-  const trs = rows.results
-      .map(
-        (s) =>
-          `<tr><td>${esc(s.name)}</td><td>${esc(s.class_name)}</td><td>${s.attendance_number}</td><td><span class="badge ${s.has_voted ? "green" : ""}">${s.has_voted ? "SUDAH" : "BELUM"}</span></td></tr>`,
-      )
-      .join(""),
-    pageUrl = (target: number) => {
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      if (klass) params.set("class", klass);
-      if (status) params.set("status", status);
-      params.set("page", String(target));
-      return `/admin/students?${params}`;
-    },
-    from = total?.n ? offset + 1 : 0,
-    to = Math.min(offset + limit, total?.n || 0),
-    nav = `<div class="actions" style="justify-content:space-between;margin-top:18px"><span class="muted">Menampilkan ${from}–${to} dari ${total?.n || 0} siswa · Halaman ${page} dari ${pages}</span><span>${page > 1 ? `<a class="btn secondary" href="${pageUrl(page - 1)}">← Sebelumnya</a>` : ""} ${page < pages ? `<a class="btn secondary" href="${pageUrl(page + 1)}">Berikutnya →</a>` : ""}</span></div>`;
-  return c.html(
-    layout(
-      "Siswa",
-      `<div class="eyebrow">DATA PEMILIH</div><h1>Manajemen Siswa</h1><div class="actions" style="justify-content:flex-start"><a class="btn" href="/admin/students/import">Import CSV</a><a class="btn secondary" href="/admin/export/students">Export Partisipasi</a></div><form method="get" class="card" style="max-width:none;margin:18px 0;display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px"><input name="q" placeholder="Cari nama" value="${esc(q)}"><select name="class"><option value="">Semua kelas</option>${classes.results.map((x) => `<option ${x.class_name === klass ? "selected" : ""}>${esc(x.class_name)}</option>`).join("")}</select><select name="status"><option value="">Semua status</option><option value="not" ${status === "not" ? "selected" : ""}>Belum</option><option value="voted" ${status === "voted" ? "selected" : ""}>Sudah</option></select><button>Cari</button></form><div class="table-wrap"><table><thead><tr><th>Nama</th><th>Kelas</th><th>Absen</th><th>Status</th></tr></thead><tbody>${trs}</tbody></table></div>${nav}${csrf(c)}`,
->>>>>>> origin/perbaikan-cvs
       { admin: true, csrfToken: c.get("csrfToken") },
     ),
   );
@@ -327,11 +258,7 @@ adminRoutes.get("/students/import", (c) =>
   c.html(
     layout(
       "Import CSV",
-<<<<<<< HEAD
-      `<div class="eyebrow">IMPORT SISWA</div><h1>Preview & Validasi CSV</h1><div class="card"><p>Format header: <code>nama,kelas,absen,username,password</code></p><p class="muted">Username & password boleh dikosongkan per baris (koma tetap ditulis).</p><label for="file">Pilih file CSV</label><input type="file" id="file" accept=".csv,text/csv"><div id="status" class="alert">Pilih file CSV untuk melihat preview.</div><div id="preview"></div><button id="send" disabled>Upload & Import Siswa</button></div><script>let rows=[];const fileInput=document.getElementById('file'),statusBox=document.getElementById('status'),previewBox=document.getElementById('preview'),sendButton=document.getElementById('send');const safe=v=>String(v).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));fileInput.addEventListener('change',async()=>{sendButton.disabled=true;rows=[];previewBox.innerHTML='';const selected=fileInput.files[0];if(!selected){statusBox.textContent='Pilih file CSV.';return}try{const text=(await selected.text()).replace(/^\\uFEFF/,'').trim();const lines=text.split(/\\r?\\n/);const header=(lines.shift()||'').toLowerCase().split(',').map(x=>x.trim());if(header.join(',')!=='nama,kelas,absen,username,password')throw new Error('Header harus tepat: nama,kelas,absen,username,password');rows=lines.filter(x=>x.trim()).map((line,index)=>{const p=line.split(',');return {name:(p[0]||'').trim(),className:(p[1]||'').trim(),attendanceNumber:Number((p[2]||'').trim()),username:(p[3]||'').trim().toLowerCase(),password:(p[4]||'').trim(),line:index+2}});const invalid=rows.filter(x=>!x.name||!x.className||!Number.isInteger(x.attendanceNumber)||x.attendanceNumber<1||(x.username&&!/^[a-z0-9._-]{3,40}$/.test(x.username))||(x.username&&x.password.length<4)||(x.username&&!x.password)||(!x.username&&x.password));statusBox.textContent=rows.length+' baris ditemukan · '+invalid.length+' baris tidak valid.';previewBox.innerHTML='<div class="table-wrap"><table><thead><tr><th>Baris</th><th>Nama</th><th>Kelas</th><th>Absen</th><th>Username</th></tr></thead><tbody>'+rows.slice(0,200).map(x=>'<tr><td>'+x.line+'</td><td>'+safe(x.name)+'</td><td>'+safe(x.className)+'</td><td>'+safe(x.attendanceNumber)+'</td><td>'+safe(x.username||'-')+'</td></tr>').join('')+'</tbody></table></div>';sendButton.disabled=rows.length===0||invalid.length>0}catch(error){statusBox.textContent=error.message||'CSV tidak dapat dibaca.'}});sendButton.addEventListener('click',async()=>{sendButton.disabled=true;const size=10;try{for(let i=0;i<rows.length;i+=size){sendButton.textContent='Mengimpor '+Math.min(i+size,rows.length)+'/'+rows.length+'?';const r=await fetch('/admin/api/students/import',{method:'POST',headers:{'content-type':'application/json','X-CSRF-Token':CSRF},body:JSON.stringify({rows:rows.slice(i,i+size)})});const d=await r.json();if(!r.ok)throw Error(d.error||'Import gagal.')}location='/admin/students'}catch(error){statusBox.textContent=error.message||'Import gagal.';sendButton.disabled=false;sendButton.textContent='Upload & Import Siswa'}})</script>${csrf(c)}`,
-=======
       `<div class="eyebrow">IMPORT SISWA</div><h1>Preview & Validasi CSV</h1><div class="card"><p>Format header: <code>nama,kelas,absen,username,password</code></p><p class="muted">Username & password boleh dikosongkan per baris (koma tetap ditulis).</p><label for="file">Pilih file CSV</label><input type="file" id="file" accept=".csv,text/csv"><div id="status" class="alert">Pilih file CSV untuk melihat preview.</div><div id="preview"></div><button id="send" disabled>Upload & Import Siswa</button></div><script>let rows=[];const fileInput=document.getElementById('file'),statusBox=document.getElementById('status'),previewBox=document.getElementById('preview'),sendButton=document.getElementById('send');const safe=v=>String(v).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));fileInput.addEventListener('change',async()=>{sendButton.disabled=true;rows=[];previewBox.innerHTML='';const selected=fileInput.files[0];if(!selected){statusBox.textContent='Pilih file CSV.';return}try{const text=(await selected.text()).replace(/^\\uFEFF/,'').trim();const lines=text.split(/\\r?\\n/);const header=(lines.shift()||'').toLowerCase().split(',').map(x=>x.trim());if(header.join(',')!=='nama,kelas,absen,username,password')throw new Error('Header harus tepat: nama,kelas,absen,username,password');rows=lines.filter(x=>x.trim()).map((line,index)=>{const p=line.split(',');return {name:(p[0]||'').trim(),className:(p[1]||'').trim(),attendanceNumber:Number((p[2]||'').trim()),username:(p[3]||'').trim().toLowerCase(),password:(p[4]||'').trim(),line:index+2}});const invalid=rows.filter(x=>!x.name||!x.className||!Number.isInteger(x.attendanceNumber)||x.attendanceNumber<1||(x.username&&!/^[a-z0-9._-]{3,40}$/.test(x.username))||(x.username&&x.password.length<4)||(x.username&&!x.password)||(!x.username&&x.password));statusBox.textContent=rows.length+' baris ditemukan · '+invalid.length+' baris tidak valid.';previewBox.innerHTML='<div class="table-wrap"><table><thead><tr><th>Baris</th><th>Nama</th><th>Kelas</th><th>Absen</th><th>Username</th></tr></thead><tbody>'+rows.slice(0,200).map(x=>'<tr><td>'+x.line+'</td><td>'+safe(x.name)+'</td><td>'+safe(x.className)+'</td><td>'+safe(x.attendanceNumber)+'</td><td>'+safe(x.username||'-')+'</td></tr>').join('')+'</tbody></table></div>';sendButton.disabled=rows.length===0||invalid.length>0}catch(error){statusBox.textContent=error.message||'CSV tidak dapat dibaca.'}});sendButton.addEventListener('click',async()=>{sendButton.disabled=true;const size=2;try{for(let i=0;i<rows.length;i+=size){sendButton.textContent='Mengimpor '+Math.min(i+size,rows.length)+'/'+rows.length+'…';const r=await fetch('/admin/api/students/import',{method:'POST',headers:{'content-type':'application/json','X-CSRF-Token':CSRF},body:JSON.stringify({rows:rows.slice(i,i+size)})});const d=await r.json();if(!r.ok)throw Error(d.error||'Import gagal.')}location='/admin/students'}catch(error){statusBox.textContent=error.message||'Import gagal.';sendButton.disabled=false;sendButton.textContent='Upload & Import Siswa'}})</script>${csrf(c)}`,
->>>>>>> origin/perbaikan-cvs
       { admin: true, csrfToken: c.get("csrfToken") },
     ),
   ),
@@ -340,13 +267,8 @@ adminRoutes.post("/api/students/import", async (c) => {
   if (!requireCsrf(c)) return jsonError(c, 403, "CSRF invalid");
   const b = await body(c),
     rows = Array.isArray(b.rows) ? b.rows : [];
-<<<<<<< HEAD
-  if (!rows.length || rows.length > 10)
-    return jsonError(c, 400, "Jumlah baris harus 1?2000.");
-=======
   if (!rows.length || rows.length > 5)
     return jsonError(c, 400, "Jumlah baris per batch harus 1–5.");
->>>>>>> origin/perbaikan-cvs
   const usernames: string[] = [];
   const parsed = rows.map((x) => {
     const r = x as Record<string, unknown>,
@@ -372,37 +294,6 @@ adminRoutes.post("/api/students/import", async (c) => {
     return jsonError(
       c,
       400,
-<<<<<<< HEAD
-      "Ada username yang sama di lebih dari satu baris.",
-    );
-  try {
-    for (let i = 0; i < parsed.length; i += 10) {
-      const stmts = [];
-      for (const row of parsed.slice(i, i + 10)) {
-        if (row.username) {
-          const passwordHash = await hashPassword(row.password);
-          stmts.push(
-            c.env.DB.prepare(
-              "INSERT INTO students(name,class_name,attendance_number,username,password_hash) VALUES(?,?,?,?,?)",
-            ).bind(row.name, row.className, row.n, row.username, passwordHash),
-          );
-        } else
-          stmts.push(
-            c.env.DB.prepare(
-              "INSERT INTO students(name,class_name,attendance_number) VALUES(?,?,?)",
-            ).bind(row.name, row.className, row.n),
-          );
-      }
-      await c.env.DB.batch(stmts);
-    }
-  } catch (error) {
-    return jsonError(
-      c,
-      409,
-      error instanceof Error && error.message !== "Data CSV tidak valid."
-        ? error.message
-        : "Import gagal. Periksa duplikasi kelas, nomor absen, atau username.",
-=======
       "Ada username yang sama di lebih dari satu baris CSV.",
     );
   if (usernames.length) {
@@ -441,7 +332,6 @@ adminRoutes.post("/api/students/import", async (c) => {
       c,
       409,
       "Kelas dan nomor absen harus unik. Periksa baris yang sudah pernah diimpor.",
->>>>>>> origin/perbaikan-cvs
     );
   }
   await audit(c, "IMPORT_STUDENTS", "students", { count: rows.length });
@@ -481,11 +371,7 @@ adminRoutes.get("/candidates", async (c) => {
   return c.html(
     layout(
       "Kandidat",
-<<<<<<< HEAD
-      `<div class="eyebrow">PASANGAN CALON</div><h1>Manajemen Kandidat</h1><form class="card" method="post">${rows.results.map((x: any) => `<fieldset><legend>Paslon ${x.candidate_number}</legend><input type="hidden" name="id" value="${x.id}"><label>Nomor urut</label><input name="number" type="number" value="${x.candidate_number}" required><label>Ketua</label><input name="chairman" value="${esc(x.chairman_name)}" required><label>Wakil</label><input name="vice" value="${esc(x.vice_chairman_name)}" required><label>URL Foto</label><input name="photo" value="${esc(x.photo_url)}"><label>Visi</label><textarea name="vision">${esc(x.vision)}</textarea><label>Misi</label><textarea name="mission">${esc(x.mission)}</textarea></fieldset>`).join("")}<button style="margin-top:18px">Simpan Kandidat</button></form>${csrf(c)}`,
-=======
       `<div class="eyebrow">PASANGAN CALON</div><h1>Manajemen Kandidat</h1><div class="grid">${rows.results.map((x: any) => `<form class="card" method="post" style="margin:0"><fieldset><legend>Paslon ${x.candidate_number}</legend><input type="hidden" name="id" value="${x.id}"><label>Nomor urut</label><input type="number" value="${x.candidate_number}" readonly><label>Ketua</label><input name="chairman" value="${esc(x.chairman_name)}" required><label>Wakil</label><input name="vice" value="${esc(x.vice_chairman_name)}" required><label>URL Foto</label><input name="photo" value="${esc(x.photo_url)}"><label>Visi</label><textarea name="vision">${esc(x.vision)}</textarea><label>Misi</label><textarea name="mission">${esc(x.mission)}</textarea></fieldset><button style="margin-top:18px">Simpan Paslon ${x.candidate_number}</button></form>`).join("")}</div>${csrf(c)}`,
->>>>>>> origin/perbaikan-cvs
       { admin: true, csrfToken: c.get("csrfToken") },
     ),
   );
@@ -493,31 +379,6 @@ adminRoutes.get("/candidates", async (c) => {
 adminRoutes.post("/candidates", async (c) => {
   const { b, ok } = await validCsrf(c);
   if (!ok) return c.text("CSRF invalid", 403);
-<<<<<<< HEAD
-  const arr = (x: unknown) => (Array.isArray(x) ? x : [x]);
-  const ids = arr(b.id),
-    nums = arr(b.number),
-    chairs = arr(b.chairman),
-    vices = arr(b.vice),
-    photos = arr(b.photo),
-    visions = arr(b.vision),
-    missions = arr(b.mission);
-  const stmts = ids.map((id, i) =>
-    c.env.DB.prepare(
-      "UPDATE candidates SET candidate_number=?,chairman_name=?,vice_chairman_name=?,photo_url=?,vision=?,mission=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-    ).bind(
-      Number(nums[i]),
-      String(chairs[i]),
-      String(vices[i]),
-      String(photos[i] || ""),
-      String(visions[i] || ""),
-      String(missions[i] || ""),
-      Number(id),
-    ),
-  );
-  await c.env.DB.batch(stmts);
-  await audit(c, "UPDATE_CANDIDATES", "candidates");
-=======
   const id = Number(b.id),
     chairman = String(b.chairman || "").trim(),
     vice = String(b.vice || "").trim();
@@ -537,7 +398,6 @@ adminRoutes.post("/candidates", async (c) => {
     .run();
   if (!result.meta.changes) return c.text("Paslon tidak ditemukan.", 404);
   await audit(c, "UPDATE_CANDIDATE", "candidate", { candidateId: id });
->>>>>>> origin/perbaikan-cvs
   return c.redirect("/admin/candidates");
 });
 adminRoutes.get("/results", async (c) => {
@@ -624,26 +484,6 @@ adminRoutes.get("/audit", async (c) => {
 });
 
 adminRoutes.get("/students/manage", async (c) => {
-<<<<<<< HEAD
-  const election = await c.env.DB.prepare(
-    "SELECT status FROM election_settings WHERE id=1",
-  ).first<{ status: string }>();
-  const rows = await c.env.DB.prepare(
-    "SELECT id,name,class_name,attendance_number,has_voted,username FROM students ORDER BY class_name,attendance_number",
-  ).all<{
-    id: number;
-    name: string;
-    class_name: string;
-    attendance_number: number;
-    has_voted: number;
-    username: string | null;
-  }>();
-  const draft = election?.status === "DRAFT";
-  return c.html(
-    layout(
-      "CRUD Siswa",
-      `<div class="eyebrow">KELOLA DATA SISWA</div><h1>Tambah, Edit & Hapus Siswa</h1>${draft ? "" : `<div class="alert">CRUD siswa dikunci karena status election ${esc(election?.status)}. Ubah status ke DRAFT untuk mengelola data.</div>`}<div class="actions" style="justify-content:flex-start"><a class="btn" href="/admin/students/new">+ Tambah Siswa</a><a class="btn secondary" href="/admin/students/import">Import CSV</a><a class="btn secondary" href="/admin/students">Daftar & QR</a></div><div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>Nama</th><th>Kelas</th><th>Absen</th><th>Status</th><th>Username & Password</th><th>Aksi</th></tr></thead><tbody>${rows.results.map((s) => `<tr><td>${esc(s.name)}</td><td>${esc(s.class_name)}</td><td>${s.attendance_number}</td><td><span class="badge ${s.has_voted ? "green" : ""}">${s.has_voted ? "SUDAH" : "BELUM"}</span></td><td><form method="post" action="/admin/students/${s.id}/credentials" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input name="username" value="${esc(s.username || "")}" placeholder="username" pattern="[a-z0-9._-]{3,40}" title="huruf kecil/angka/./_/- min 3 karakter" style="width:110px" required><input name="password" type="text" placeholder="password baru (kosongkan jika tidak ganti)" style="width:170px"><button type="submit">Simpan</button></form></td><td><a class="btn secondary" href="/admin/students/${s.id}/edit">Edit</a> <form method="post" action="/admin/students/${s.id}/delete" style="display:inline" onsubmit="return confirm('Hapus siswa ${esc(s.name)}? Username dan password login siswa ini juga ikut terhapus.')"><button class="danger">Hapus</button></form></td></tr>`).join("")}</tbody></table></div>${csrf(c)}`,
-=======
   const klass = (c.req.query("class") || "").trim(),
     limit = 50,
     requestedPage = Math.max(1, Number(c.req.query("page")) || 1),
@@ -684,7 +524,6 @@ adminRoutes.get("/students/manage", async (c) => {
     layout(
       "CRUD Siswa",
       `<div class="eyebrow">KELOLA DATA SISWA</div><h1>Tambah, Edit & Hapus Siswa</h1>${draft ? "" : `<div class="alert">CRUD siswa dikunci karena status election ${esc(election?.status)}. Ubah status ke DRAFT untuk mengelola data.</div>`}<div class="actions" style="justify-content:flex-start"><a class="btn" href="/admin/students/new">+ Tambah Siswa</a><a class="btn secondary" href="/admin/students/import">Import CSV</a><a class="btn secondary" href="/admin/students">Daftar Siswa</a></div><form method="get" class="card" style="max-width:none;margin:18px 0;display:flex;gap:10px;align-items:end"><label style="margin:0;flex:1">Filter kelas<select name="class"><option value="">Semua kelas</option>${classes.results.map(x=>`<option value="${esc(x.class_name)}" ${x.class_name===klass?"selected":""}>${esc(x.class_name)}</option>`).join("")}</select></label><button>Filter</button><a class="btn secondary" href="/admin/students/manage">Reset</a></form><div class="table-wrap"><table><thead><tr><th>Nama</th><th>Kelas</th><th>Absen</th><th>Status</th><th>Username</th><th>Password</th><th>Aksi</th></tr></thead><tbody>${rows.results.map((s) => `<tr><td>${esc(s.name)}</td><td>${esc(s.class_name)}</td><td>${s.attendance_number}</td><td><span class="badge ${s.has_voted ? "green" : ""}">${s.has_voted ? "SUDAH" : "BELUM"}</span></td><td>${esc(s.username || "-")}</td><td><a class="btn secondary" href="/admin/students/${s.id}/username">Edit Username</a> <a class="btn secondary" href="/admin/students/${s.id}/password">Ganti Password</a></td><td><a class="btn secondary" href="/admin/students/${s.id}/edit">Edit</a> <form method="post" action="/admin/students/${s.id}/delete" style="display:inline" onsubmit="return confirm('Hapus siswa ${esc(s.name)}?')"><button class="danger">Hapus</button></form></td></tr>`).join("")}</tbody></table></div>${nav}${csrf(c)}`,
->>>>>>> origin/perbaikan-cvs
       { admin: true, csrfToken: c.get("csrfToken") },
     ),
   );
@@ -828,8 +667,6 @@ adminRoutes.post("/students/:id/delete", async (c) => {
   await audit(c, "DELETE_STUDENT", "student", { studentId: id });
   return c.redirect("/admin/students/manage");
 });
-<<<<<<< HEAD
-=======
 
 adminRoutes.get("/students/:id/username", async (c) => {
   const student = await c.env.DB.prepare(
@@ -901,7 +738,6 @@ adminRoutes.post("/students/:id/password", async (c) => {
   await audit(c, "SET_STUDENT_PASSWORD", "student", { studentId: id });
   return c.redirect("/admin/students/manage");
 });
->>>>>>> origin/perbaikan-cvs
 adminRoutes.post("/students/:id/credentials", async (c) => {
   const { b, ok } = await validCsrf(c);
   if (!ok) return c.text("CSRF invalid", 403);
