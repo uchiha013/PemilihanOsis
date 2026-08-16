@@ -30,8 +30,8 @@ Isi `SESSION_SECRET` di `.dev.vars` dengan nilai acak minimal 32 karakter. File 
 Saat Worker lokal berjalan, panggil setup satu kali. Password minimal 12 karakter.
 
 ```powershell
-$headers = @{ "X-Setup-Secret" = "SECRET_DARI_DEV_VARS" }
-$body = @{ email = "admin@sekolah.sch.id"; password = "PASSWORD_KUAT_MINIMAL_12" } | ConvertTo-Json
+$headers = @{ "X-Setup-Secret" = "1234567890qwertyuiopasdfghjklzxcvbnm" }
+$body = @{ email = "admin@angela.sch.id"; password = "JalanMerdeka24" } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri http://localhost:8787/admin/setup -Headers $headers -ContentType application/json -Body $body
 ```
 
