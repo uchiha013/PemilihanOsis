@@ -476,7 +476,7 @@ publicRoutes.get('/', (c) => {
     const error = c.req.query('error');
 
     const html = `
-        <section class="hero login-hero">
+        <section class="hero">
 
             <img
                 class="login-banner"
@@ -1264,55 +1264,23 @@ publicRoutes.get(
                 .race-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:16px; justify-content:center; }
                 .race-legend span { display:flex; align-items:center; gap:8px; font-weight:700; color:var(--navy); font-size:14px; }
                 .race-legend i { width:14px; height:14px; border-radius:4px; display:inline-block; }
-
-                .beam-stage { position:relative; height:130px; background:radial-gradient(circle at center,#0b1220 0%,#04070d 70%); border-radius:16px; overflow:hidden; margin-top:14px; box-shadow:var(--shadow-lg); }
-                .beam-half { position:absolute; top:0; bottom:0; width:0%; filter:drop-shadow(0 0 14px currentColor); background:linear-gradient(90deg,transparent,currentColor 70%,#fff); }
-                .beam-half.right { background:linear-gradient(270deg,transparent,currentColor 70%,#fff); }
-                .beam-half.left { left:0; animation: beamGrowLeft 6.8s cubic-bezier(.16,.84,.44,1) forwards; }
-                .beam-half.right { right:0; animation: beamGrowRight 6.8s cubic-bezier(.16,.84,.44,1) forwards; }
+                .reveal-fade-in { animation: revealFade .6s ease forwards; }
+                @keyframes revealFade { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+                .beam-stage { position:relative; height:220px; background:radial-gradient(circle at center,#0b1220 0%,#04070d 70%); border-radius:16px; overflow:hidden; margin-top:14px; box-shadow:var(--shadow-lg); }
+                .beam-half { position:absolute; top:0; bottom:0; width:0%; filter:drop-shadow(0 0 18px currentColor); }
+                .beam-half.left { left:0; background:linear-gradient(90deg,transparent,currentColor 70%,#fff); animation: beamGrowLeft 6.8s cubic-bezier(.16,.84,.44,1) forwards; }
+                .beam-half.right { right:0; background:linear-gradient(270deg,transparent,currentColor 70%,#fff); animation: beamGrowRight 6.8s cubic-bezier(.16,.84,.44,1) forwards; }
                 .beam-half::after { content:""; position:absolute; inset:0; background-image: radial-gradient(2px 2px at 10% 20%,#fff,transparent), radial-gradient(2px 2px at 30% 60%,#fff,transparent), radial-gradient(2px 2px at 55% 30%,#fff,transparent), radial-gradient(2px 2px at 75% 70%,#fff,transparent), radial-gradient(2px 2px at 90% 40%,#fff,transparent); opacity:.8; animation: beamSparkle .6s linear infinite; }
                 @keyframes beamSparkle { 0% { opacity:.4; } 50% { opacity:1; } 100% { opacity:.4; } }
                 @keyframes beamGrowLeft { from { width:0%; } to { width:50%; } }
                 @keyframes beamGrowRight { from { width:0%; } to { width:50%; } }
-
-                .beam-clash { position:absolute; top:50%; left:50%; width:0; height:0; border-radius:50%; background:radial-gradient(circle,#fff 0%,rgba(255,255,255,.6) 30%,transparent 70%); transform:translate(-50%,-50%); opacity:0; animation: beamClash 8s ease-out 6.8s forwards; }
-                @keyframes beamClash { 0% { width:0; height:0; opacity:0; } 35% { width:180px; height:180px; opacity:1; } 100% { width:300px; height:300px; opacity:0; } }
-
-                .beam-vs { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:26px; font-weight:800; color:#fff; text-shadow:0 0 20px rgba(255,255,255,.9),0 0 40px rgba(255,255,255,.5); z-index:5; transition:opacity .3s ease; animation: beamVsPulse 1s ease-in-out infinite alternate; }
+                .beam-clash { position:absolute; top:50%; left:50%; width:0; height:0; border-radius:50%; background:radial-gradient(circle,#fff 0%,rgba(255,255,255,.6) 30%,transparent 70%); transform:translate(-50%,-50%); opacity:0; animation: beamClash 1.2s ease-out 6.8s forwards; }
+                @keyframes beamClash { 0% { width:0; height:0; opacity:0; } 35% { width:280px; height:280px; opacity:1; } 100% { width:460px; height:460px; opacity:0; } }
+                .beam-vs { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:32px; font-weight:800; color:#fff; text-shadow:0 0 20px rgba(255,255,255,.9),0 0 40px rgba(255,255,255,.5); z-index:5; animation: beamVsPulse 1s ease-in-out infinite alternate; }
                 @keyframes beamVsPulse { from { transform:translate(-50%,-50%) scale(1); } to { transform:translate(-50%,-50%) scale(1.15); } }
-
-                .beam-label { position:absolute; bottom:10px; font-weight:800; color:#fff; font-size:13px; text-shadow:0 2px 6px rgba(0,0,0,.6); z-index:6; letter-spacing:1px; }
-                .beam-label.left { left:16px; }
-                .beam-label.right { right:16px; }
-
-                /* Titik gesekan/tabrakan beam, meluncur mengikuti hasil akhir — gaya blaster clash */
-                .beam-boundary { position:absolute; top:0; bottom:0; width:5px; margin-left:-2.5px; background:linear-gradient(to bottom,#fff,#ffe98a,#fff); box-shadow:0 0 10px 3px rgba(255,255,255,.9), 0 0 22px 8px rgba(255,210,90,.55); z-index:4; animation: boundaryFlicker .12s steps(2) infinite; }
-                .beam-boundary::before, .beam-boundary::after { content:""; position:absolute; top:50%; left:50%; width:4px; height:4px; border-radius:50%; background:#fff; box-shadow:0 0 8px 2px #fff; animation: sparkFly .5s ease-out infinite; }
-                .beam-boundary::after { animation-delay:.25s; transform:scaleX(-1); }
-                @keyframes boundaryFlicker { 0%,100% { opacity:1; } 50% { opacity:.55; } }
-                @keyframes sparkFly { 0% { transform:translate(-50%,-60%) scale(1); opacity:1; } 100% { transform:translate(calc(-50% + 18px), calc(-60% - 18px)) scale(0); opacity:0; } }
-
-                /* Beam card memudar sebelum digantikan reveal dramatis (mode FULL) */
-                #beamCard.fading { animation: beamFadeOut .6s ease forwards; }
-                @keyframes beamFadeOut { to { opacity:0; transform:scale(.96); } }
-
-                /* Reveal dramatis paslon — mode FULL */
-                .reveal-card {
-                    opacity: 0;
-                    transform: translateY(26px) scale(.92);
-                    animation: revealIn .7s cubic-bezier(.34,1.56,.64,1) forwards;
-                }
-                @keyframes revealIn {
-                    to { opacity: 1; transform: translateY(0) scale(1); }
-                }
-                .reveal-card.leading {
-                    box-shadow: 0 0 0 3px #facc15, 0 0 30px rgba(250,204,21,.55);
-                    transition: box-shadow .6s ease;
-                }
-                .reveal-heading {
-                    opacity: 0;
-                    animation: revealIn .6s ease forwards;
-                }
+                .beam-label { position:absolute; bottom:14px; font-weight:800; color:#fff; font-size:14px; text-shadow:0 2px 6px rgba(0,0,0,.6); z-index:6; }
+                .beam-label.left { left:20px; }
+                .beam-label.right { right:20px; }
             </style>
             <section
                 class="${screen ? 'screen' : ''}"
@@ -1350,217 +1318,85 @@ publicRoutes.get(
             <script>
                 let last;
                 let quickCountToken = 0;
-                let introPlayed = false;
-                let introJustStarted = false;
-                let introMinDelay = 11000;
                 const RACE_COLORS = ['#16a34a', '#38bdf8', '#f59e0b', '#f472b6', '#a78bfa', '#fb923c', '#2dd4bf', '#f87171'];
-                const BEAM_COLORS = ['#ef4444', '#3b82f6'];
 
-                function pad(n) {
-                    return String(n).padStart(2, '0');
-                }
-
-                // Selama beam bertarung, siapa lawan siapa selalu dirahasiakan ("???"),
-                // baik mode FULL maupun PERCENTAGE_ONLY.
                 function renderBeamStage(candidates) {
-                    return '<div class="card" id="beamCard" style="grid-column:1/-1"><h2 id="beamHeading" style="text-align:center">Yang mana ya yang bakal menang…</h2><div class="beam-stage" id="beamStage">' +
-                        '<div class="beam-half left" id="beamLeft" style="color:' + BEAM_COLORS[0] + '"></div>' +
-                        '<div class="beam-half right" id="beamRight" style="color:' + BEAM_COLORS[1] + '"></div>' +
-                        '<div class="beam-clash" id="beamClash"></div>' +
-                        '<div class="beam-vs" id="beamVs">VS</div>' +
-                        '<div class="beam-label left" id="beamLabelLeft">???</div>' +
-                        '<div class="beam-label right" id="beamLabelRight">???</div>' +
+                    const c0 = candidates[0], c1 = candidates[1];
+                    return '<div class="card" style="grid-column:1/-1"><h2 style="text-align:center">Pertarungan Suara Sedang Berlangsung…</h2><div class="beam-stage">' +
+                        '<div class="beam-half left" style="color:' + RACE_COLORS[0] + '"></div>' +
+                        '<div class="beam-half right" style="color:' + RACE_COLORS[1] + '"></div>' +
+                        '<div class="beam-clash"></div>' +
+                        '<div class="beam-vs">VS</div>' +
+                        '<div class="beam-label left">Paslon ' + String(c0.candidateNumber).padStart(2, '0') + '</div>' +
+                        '<div class="beam-label right">Paslon ' + String(c1.candidateNumber).padStart(2, '0') + '</div>' +
                         '</div></div>';
                 }
 
-                // Dipakai untuk refresh berikutnya di mode PERCENTAGE_ONLY —
-                // nama tetap permanen "???", cuma persentase yang tampil.
-                function renderBeamSettled(candidates) {
-                    const p0 = candidates[0].percentage || 0;
-                    const p1 = candidates[1].percentage || 0;
-                    return '<div class="card" style="grid-column:1/-1"><h2 style="text-align:center">Perolehan Sementara</h2><div class="beam-stage">' +
-                        '<div class="beam-half left" style="width:' + p0 + '%;color:' + BEAM_COLORS[0] + ';animation:none"></div>' +
-                        '<div class="beam-half right" style="width:' + p1 + '%;color:' + BEAM_COLORS[1] + ';animation:none"></div>' +
-                        '<div class="beam-boundary" style="left:' + p0 + '%"></div>' +
-                        '<div class="beam-label left">??? — ' + p0 + '%</div>' +
-                        '<div class="beam-label right">??? — ' + p1 + '%</div>' +
-                        '</div></div>';
-                }
-
-                // Dipakai untuk refresh berikutnya di mode FULL setelah reveal pertama —
-                // nama sudah permanen terbuka, tanpa mengulang animasi beam/reveal.
-                function renderFullSettled(candidates) {
-                    return candidates.map((candidate) =>
-                        '<div class="card candidate">' +
-                            '<div class="num">' + pad(candidate.candidateNumber) + '</div>' +
-                            '<h2>' + candidate.chairmanName + ' & ' + candidate.viceChairmanName + '</h2>' +
-                            (candidate.percentage !== undefined ? '<strong style="font-size:38px">' + candidate.percentage + '%</strong>' : '') +
-                            (candidate.votes !== undefined ? '<p>' + candidate.votes + ' suara</p>' : '') +
-                        '</div>'
-                    ).join('');
-                }
-
-                // Label permanen "???" untuk mode PERCENTAGE_ONLY dengan >2 paslon.
                 function renderPercentBar(candidates) {
                     return '<div class="card reveal-fade-in" style="grid-column:1/-1"><h2 style="text-align:center">Perolehan Sementara</h2><div class="race-bar">' +
                         candidates.map((candidate, index) => '<div class="race-seg" style="width:' + (candidate.percentage || 0) + '%;background:' + RACE_COLORS[index % RACE_COLORS.length] + '">' + ((candidate.percentage || 0) >= 8 ? candidate.percentage + '%' : '') + '</div>').join('') +
                         '</div><div class="race-legend">' +
-                        candidates.map((candidate, index) => '<span><i style="background:' + RACE_COLORS[index % RACE_COLORS.length] + '"></i>??? — ' + (candidate.percentage || 0) + '%</span>').join('') +
+                        candidates.map((candidate, index) => '<span><i style="background:' + RACE_COLORS[index % RACE_COLORS.length] + '"></i>Paslon ' + String(candidate.candidateNumber).padStart(2, '0') + ' — ' + (candidate.percentage || 0) + '%</span>').join('') +
                         '</div></div>';
                 }
 
-                // Kartu reveal dramatis untuk mode FULL (dipasang setelah beam memudar).
-                function renderReveal(candidates) {
-                    const heading = '<div class="card reveal-heading" style="grid-column:1/-1;text-align:center"><h2>Hasilnya</h2></div>';
-                    const cards = candidates.map((candidate, index) =>
-                        '<div class="card candidate reveal-card" id="revealCard' + index + '" style="animation-delay:' + (index * 0.6) + 's">' +
-                            '<div class="num">' + pad(candidate.candidateNumber) + '</div>' +
-                            '<h2>' + candidate.chairmanName + ' & ' + candidate.viceChairmanName + '</h2>' +
-                            '<strong style="font-size:38px" id="revealPct' + index + '">0%</strong>' +
-                            (candidate.votes !== undefined ? '<p id="revealVotes' + index + '" style="opacity:0;transition:opacity .4s ease">' + candidate.votes + ' suara</p>' : '') +
-                        '</div>'
-                    ).join('');
-                    return heading + cards;
-                }
-
-                // Animasi persentase menghitung naik dari 0%, lalu menandai paslon unggul.
-                function animateReveal(candidates) {
-                    let finished = 0;
-
-                    candidates.forEach((candidate, index) => {
-                        const target = candidate.percentage || 0;
-                        const pctEl = document.querySelector('#revealPct' + index);
-                        const votesEl = document.querySelector('#revealVotes' + index);
-                        const startDelay = index * 600;
-                        const duration = 2600;
-                        let start = null;
-
-                        function tick(now) {
-                            if (start === null) start = now;
-                            const elapsed = now - start - startDelay;
-
-                            if (elapsed < 0) {
-                                requestAnimationFrame(tick);
-                                return;
-                            }
-
-                            const progress = Math.min(1, elapsed / duration);
-                            const eased = 1 - Math.pow(1 - progress, 3);
-
-                            if (pctEl) pctEl.textContent = Math.round(target * eased) + '%';
-
-                            if (progress < 1) {
-                                requestAnimationFrame(tick);
-                            } else {
-                                if (pctEl) pctEl.textContent = target + '%';
-                                if (votesEl) votesEl.style.opacity = '1';
-                                finished++;
-                            }
-                        }
-
-                        requestAnimationFrame(tick);
-                    });
-                }
-
-                function markLeading(candidates) {
-                    let leadIndex = 0;
-                    for (let i = 1; i < candidates.length; i++) {
-                        if ((candidates[i].percentage || 0) > (candidates[leadIndex].percentage || 0)) leadIndex = i;
-                    }
-                    const el = document.querySelector('#revealCard' + leadIndex);
-                    if (el) el.classList.add('leading');
-                }
-
-                // mode: 'FULL' atau 'PERCENT' — menentukan apa yang terjadi setelah beam saling mendorong.
-                function settleBeam(candidates, mode) {
-                    const beamCard = document.querySelector('#beamCard');
-                    const stage = document.querySelector('#beamStage');
-                    const left = document.querySelector('#beamLeft');
-                    const right = document.querySelector('#beamRight');
-                    const vs = document.querySelector('#beamVs');
-                    const clash = document.querySelector('#beamClash');
-                    const labelLeft = document.querySelector('#beamLabelLeft');
-                    const labelRight = document.querySelector('#beamLabelRight');
-                    const heading = document.querySelector('#beamHeading');
-
-                    if (!left || !right || !stage) return;
-
-                    if (clash) clash.style.display = 'none';
-
-                    const boundary = document.createElement('div');
-                    boundary.className = 'beam-boundary';
-                    boundary.style.left = '50%';
-                    stage.appendChild(boundary);
-
-                    setTimeout(() => {
-                        const p0 = candidates[0].percentage || 0;
-                        const p1 = candidates[1].percentage || 0;
-
-                        left.style.animation = 'none';
-                        right.style.animation = 'none';
-
-                        const duration = 'width 10.2s cubic-bezier(.34,1.56,.64,1)';
-                        left.style.transition = duration;
-                        right.style.transition = duration;
-                        boundary.style.transition = 'left 10.2s cubic-bezier(.34,1.56,.64,1)';
-
-                        left.style.width = p0 + '%';
-                        right.style.width = p1 + '%';
-                        boundary.style.left = p0 + '%';
-
-                        if (vs) vs.style.opacity = '0';
-
-                        if (mode === 'PERCENT') {
-                            if (labelLeft) labelLeft.textContent = '??? — ' + p0 + '%';
-                            if (labelRight) labelRight.textContent = '??? — ' + p1 + '%';
-                        }
-
-                        if (mode === 'FULL') {
-                            // Tunggu dorongan selesai (10.2s), lalu memudarkan panggung beam
-                            // dan memasang reveal dramatis paslon.
-                            setTimeout(() => {
-                                if (beamCard) beamCard.classList.add('fading');
-
-                                setTimeout(() => {
-                                    if (beamCard) beamCard.remove();
-
-                                    const content = document.querySelector('#content');
-                                    if (content) {
-                                        content.insertAdjacentHTML('beforeend', renderReveal(candidates));
-                                        animateReveal(candidates);
-                                        markLeading(candidates);
-                                    }
-                                }, 600);
-                            }, 10200);
-                        }
-                    }, 5000);
-                }
-
                 async function load() {
-                    introJustStarted = false;
-
                     try {
-                        const response = await fetch('/api/public/quick-count');
-                        if (!response.ok) { throw new Error(); }
-                        const data = await response.json();
+                        const response =
+                            await fetch(
+                                '/api/public/quick-count'
+                            );
+
+                        if (!response.ok) {
+                            throw new Error();
+                        }
+
+                        const data =
+                            await response.json();
+
                         last = data;
+
                         render(data);
+
                     } catch (error) {
-                        document.querySelector('#updated').textContent = 'Koneksi terputus. ' + 'Mencoba memperbarui kembali…';
+                        document.querySelector(
+                            '#updated'
+                        ).textContent =
+                            'Koneksi terputus. ' +
+                            'Mencoba memperbarui kembali…';
                     }
 
+                    const isBeam = last && last.candidates && last.candidates.length === 2 && last.candidates[0] && last.candidates[0].chairmanName === undefined && last.candidates[0].percentage !== undefined;
                     const baseDelay = Math.max(3000, (last?.refreshInterval || 5) * 1000);
-                    const delay = introJustStarted ? Math.max(baseDelay, introMinDelay) : baseDelay;
 
-                    setTimeout(load, delay);
+                    setTimeout(
+                        load,
+                        isBeam ? Math.max(baseDelay, 8600) : baseDelay
+                    );
                 }
 
                 function render(data) {
-                    document.querySelector('#title').textContent = data.status === 'CLOSED' ? 'HASIL AKHIR' : 'QUICK COUNT — HASIL SEMENTARA';
-                    document.querySelector('#school').textContent = data.schoolName || '';
+                    document.querySelector(
+                        '#title'
+                    ).textContent =
+                        data.status === 'CLOSED'
+                            ? 'HASIL AKHIR'
+                            : 'QUICK COUNT — HASIL SEMENTARA';
 
-                    const content = document.querySelector('#content');
-                    const updated = document.querySelector('#updated');
+                    document.querySelector(
+                        '#school'
+                    ).textContent =
+                        data.schoolName || '';
+
+                    const content =
+                        document.querySelector(
+                            '#content'
+                        );
+
+                    const updated =
+                        document.querySelector(
+                            '#updated'
+                        );
 
                     if (!data.enabled) {
                         content.innerHTML = \`
@@ -1571,6 +1407,7 @@ publicRoutes.get(
                                 </h2>
                             </div>
                         \`;
+
                         return;
                     }
 
@@ -1605,41 +1442,30 @@ publicRoutes.get(
                             </strong>
 
                             <div class="progress">
-                                <i style="width: \${data.turnoutPercentage}%"></i>
+                                <i
+                                    style="
+                                        width:
+                                            \${data.turnoutPercentage}%
+                                    "
+                                ></i>
                             </div>
                         </div>
                     \`;
 
-                    const fullMode = data.candidates.length > 0 && data.candidates[0].chairmanName !== undefined;
                     const percentOnly = data.candidates.length > 0 && data.candidates[0].chairmanName === undefined && data.candidates[0].percentage !== undefined;
-                    const twoWay = data.candidates.length === 2 && (fullMode || percentOnly);
 
-                    quickCountToken++;
-
-                    if (twoWay) {
-                        if (!introPlayed) {
-                            introPlayed = true;
-                            introJustStarted = true;
-                            // Reveal FULL butuh waktu lebih lama (beam + dorong + memudar + reveal ~30 detik).
-                            // Baku hantam (tumbuh+clash+dorong) sekarang total 30 detik;
-                            // mode FULL nambah waktu fade + reveal paslon di ujungnya.
-                            introMinDelay = fullMode ? 38000 : 31000;
-
-                            const myToken = quickCountToken;
-                            content.innerHTML = statsHtml + renderBeamStage(data.candidates);
-
-                            setTimeout(() => {
-                                if (myToken !== quickCountToken) return;
-                                settleBeam(data.candidates, fullMode ? 'FULL' : 'PERCENT');
-                            }, 14800);
-                        } else if (fullMode) {
-                            content.innerHTML = statsHtml + renderFullSettled(data.candidates);
-                        } else {
-                            content.innerHTML = statsHtml + renderBeamSettled(data.candidates);
-                        }
+                    if (percentOnly && data.candidates.length === 2) {
+                        const myToken = ++quickCountToken;
+                        content.innerHTML = statsHtml + renderBeamStage(data.candidates);
+                        setTimeout(() => {
+                            if (myToken !== quickCountToken) return;
+                            content.innerHTML = statsHtml + renderPercentBar(data.candidates);
+                        }, 8000);
                     } else if (percentOnly) {
+                        quickCountToken++;
                         content.innerHTML = statsHtml + renderPercentBar(data.candidates);
                     } else {
+                        quickCountToken++;
                         let html = statsHtml;
                         for (const candidate of data.candidates) {
                             html += \`
@@ -1653,21 +1479,40 @@ publicRoutes.get(
                                     </h2>
 
                                     \${candidate.percentage !== undefined
-                                        ? \`<strong style="font-size: 38px">\${candidate.percentage}%</strong>\`
+                                        ? \`
+                                            <strong
+                                                style="
+                                                    font-size: 38px
+                                                "
+                                            >
+                                                \${candidate.percentage}%
+                                            </strong>
+                                        \`
                                         : ''
                                     }
 
                                     \${candidate.votes !== undefined
-                                        ? \`<p>\${candidate.votes} suara</p>\`
+                                        ? \`
+                                            <p>
+                                                \${candidate.votes}
+                                                suara
+                                            </p>
+                                        \`
                                         : ''
                                     }
+
                                 </div>
                             \`;
                         }
                         content.innerHTML = html;
                     }
 
-                    updated.textContent = 'Terakhir diperbarui: ' + new Date().toLocaleTimeString('id-ID');
+                    updated.textContent =
+                        'Terakhir diperbarui: ' +
+                        new Date()
+                            .toLocaleTimeString(
+                                'id-ID'
+                            );
                 }
 
                 load();
