@@ -604,6 +604,10 @@ const css = `
     box-shadow: var(--shadow-lg);
   }
 
+  .voter-info {
+    padding-bottom: 8px !important;
+  }
+
   .card h2,
   .card p,
   .card details,
@@ -618,10 +622,6 @@ const css = `
     color: var(--navy);
   }
 
-  /* Halaman admin pakai kartu terang — teks di dalamnya (h2, angka .stat,
-     label polos, dsb) didesain untuk background terang, jadi kartu gelap
-     bikin teks nyaris tak kelihatan. Halaman publik (beranda, quick count
-     proyektor) tetap pakai kartu gelap sesuai desain aslinya. */
   .admin-page .card {
     background: #ffffff;
     border: 1px solid var(--slate-100);
@@ -833,9 +833,10 @@ const css = `
   .num {
     font-size: 36px;
     font-weight: 800;
-    color: var(--primary);
+    color: var(--primary-light);
     line-height: 1;
     margin-bottom: 8px;
+    padding: 10px;
   }
 
   /* =========================
