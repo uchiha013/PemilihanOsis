@@ -1236,6 +1236,7 @@ publicRoutes.get(
                 .race-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:16px; justify-content:center; }
                 .race-legend span { display:flex; align-items:center; gap:8px; font-weight:700; color:var(--navy); font-size:14px; }
                 .race-legend i { width:14px; height:14px; border-radius:4px; display:inline-block; }
+                .beam-text {margin-bottom: 0px !important;}
 
                 .beam-stage { position:relative; height:130px; background:radial-gradient(circle at center,#0b1220 0%,#04070d 70%); border-radius:16px; overflow:hidden; margin-top:14px; box-shadow:var(--shadow-lg); }
                 .beam-half { position:absolute; top:0; bottom:0; width:0%; filter:drop-shadow(0 0 14px currentColor); background:linear-gradient(90deg,transparent,currentColor 70%,#fff); }
@@ -1335,7 +1336,7 @@ publicRoutes.get(
                 // Selama beam bertarung, siapa lawan siapa selalu dirahasiakan ("???"),
                 // baik mode FULL maupun PERCENTAGE_ONLY.
                 function renderBeamStage(candidates) {
-                    return '<div class="card" id="beamCard" style="grid-column:1/-1"><h2 id="beamHeading" style="text-align:center">Yang mana ya yang bakal menang…</h2><div class="beam-stage" id="beamStage">' +
+                    return '<div class="card" id="beamCard" style="grid-column:1/-1"><h2 id="beamHeading" style="text-align:center" class="beam-text">Siapakah yang akan memenangkan pemilu?</h2><div class="beam-stage" id="beamStage">' +
                         '<div class="beam-half left" id="beamLeft" style="color:' + BEAM_COLORS[0] + '"></div>' +
                         '<div class="beam-half right" id="beamRight" style="color:' + BEAM_COLORS[1] + '"></div>' +
                         '<div class="beam-clash" id="beamClash"></div>' +
@@ -1345,12 +1346,10 @@ publicRoutes.get(
                         '</div></div>';
                 }
 
-                // Dipakai untuk refresh berikutnya di mode PERCENTAGE_ONLY —
-                // nama tetap permanen "???", cuma persentase yang tampil.
                 function renderBeamSettled(candidates) {
                     const p0 = candidates[0].percentage || 0;
                     const p1 = candidates[1].percentage || 0;
-                    return '<div class="card" style="grid-column:1/-1"><h2 style="text-align:center">Perolehan Sementara</h2><div class="beam-stage">' +
+                    return '<div class="card" style="grid-column:1/-1"><h2 style="text-align:center" class="beam-text">Perolehan Sementara</h2><div class="beam-stage">' +
                         '<div class="beam-half left" style="width:' + p0 + '%;color:' + BEAM_COLORS[0] + ';animation:none"></div>' +
                         '<div class="beam-half right" style="width:' + p1 + '%;color:' + BEAM_COLORS[1] + ';animation:none"></div>' +
                         '<div class="beam-boundary" style="left:' + p0 + '%"></div>' +
