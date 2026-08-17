@@ -599,6 +599,10 @@ const css = `
     box-shadow: var(--shadow-lg);
   }
 
+  .voter-info {
+    padding-bottom: 8px !important;
+  }
+
   .card h2,
   .card p,
   .card details,
