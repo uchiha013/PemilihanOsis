@@ -476,7 +476,7 @@ publicRoutes.get('/', (c) => {
     const error = c.req.query('error');
 
     const html = `
-        <section class="hero login-hero">
+        <section class="hero">
 
             <img
                 class="login-banner"
@@ -871,41 +871,13 @@ publicRoutes.get('/vote', async (c) => {
                                 candidate.chairman_name,
                             ),
                         )}
-
                         <br>
-
-                        &amp;
-
-                        <br>
-
                         ${esc(
                             String(
                                 candidate.vice_chairman_name,
                             ),
                         )}
                     </h2>
-
-                    <details>
-                        <summary>
-                            Visi & Misi
-                        </summary>
-
-                        <p>
-                            ${esc(
-                                String(
-                                    candidate.vision,
-                                ),
-                            )}
-                        </p>
-
-                        <p>
-                            ${esc(
-                                String(
-                                    candidate.mission,
-                                ),
-                            )}
-                        </p>
-                    </details>
 
                     <button
                         onclick="pick(
@@ -914,7 +886,7 @@ publicRoutes.get('/vote', async (c) => {
                             '${esc(names)}'
                         )"
                     >
-                        Pilih ${candidateNumber}
+                        Pilih
                     </button>
 
                 </article>

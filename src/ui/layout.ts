@@ -412,25 +412,96 @@ const css = `
     margin-bottom: 40px;
   }
 
-  /* Halaman login dirancang untuk layar landscape 16:9 tanpa scroll. */
-  body.login-page { height: 100svh; overflow: hidden; }
-  .login-page header { height: 56px; flex: 0 0 56px; }
-  .login-page main { max-width: none; margin: 0 auto; padding: clamp(8px, 1.2vh, 14px) 24px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-  .login-page footer { flex: 0 0 auto; padding: 6px 12px 8px; font-size: 11px; }
-  .login-hero { width: min(100%, 1100px); max-width: none; padding: 0; display: flex; flex-direction: column; align-items: center; }
-  .login-banner { display: block; width: min(74vw, 900px, calc(33vh * 2.406)); height: auto; margin: 0 auto clamp(8px, 1.5vh, 16px); border-radius: var(--radius-lg); border: 2px solid rgba(255, 255, 255, 0.75); box-shadow: var(--shadow-lg); }
-  .login-hero h1 { font-size: clamp(30px, 4.2vw, 54px); margin: 0 0 6px; }
-  .login-hero p { max-width: 900px; margin: 0 0 clamp(10px, 1.5vh, 16px); font-size: clamp(14px, 1.25vw, 18px); line-height: 1.4; }
-  .login-hero .eyebrow { margin-bottom: 6px; }
-  .login-hero form.card { width: min(440px, 94vw); margin: 0; padding: 12px 28px 16px; }
-  .login-hero form.card label { margin: 8px 0 4px; font-size: 12px; }
-  .login-hero form.card input { padding: 7px 12px; }
-  .login-hero form.card button { width: 60%; margin-top: 12px !important; padding: 10px 16px; }
+  body.login-page {
+    height: 100vh;
+  }
+
+  .login-page header {
+    height: 56px;
+    flex: 0 0 56px;
+  }
+
+  .login-page main {
+    max-width: none;
+    margin: 0 auto;
+    padding: clamp(8px, 1.2vh, 14px) 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .login-page footer {
+    flex: 0 0 auto;
+    padding: 6px 12px 8px;
+    font-size: 11px;
+  }
+
+  .hero {
+    width: min(100%, 1100px);
+    max-width: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .login-banner {
+    display: block;
+    width: min(74vw, 900px, calc(33vh * 2.406));
+    height: auto;
+    margin: 0 auto clamp(8px, 1.5vh, 16px);
+    border-radius: var(--radius-lg);
+    border: 2px solid rgba(255, 255, 255, 0.75);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .hero h1 {
+    font-size: clamp(30px, 4.2vw, 54px);
+    margin: 0 0 12px;
+  }
+
+  .hero p {
+    max-width: 900px;
+    margin: 0 0 clamp(10px, 1.5vh, 16px);
+    font-size: clamp(14px, 1.25vw, 18px);
+    line-height: 1.4;
+    margin-bottom: 20px;
+  }
+
+  .hero .eyebrow {
+    margin: 8px;
+  }
+
+  .hero form.card {
+    width: min(440px, 94vw);
+    margin: 12px;
+    padding: 12px 28px 16px;
+  }
+
+  .hero form.card label {
+    margin: 8px 0 4px;
+    font-size: 12px;
+  }
+
+  .hero form.card input {
+    padding: 7px 12px;
+  }
+
+  .hero form.card button {
+    width: 60%;
+    margin-top: 20px !important;
+    padding: 10px 16px;
+  }
+
 
   @media (max-height: 800px) and (min-width: 769px) {
-    .login-banner { width: min(74vw, 900px, calc(27vh * 2.406)); }
-    .login-hero p { margin-bottom: 8px; }
-    .login-hero form.card { padding-top: 8px; padding-bottom: 10px; }
+    .login-banner {
+      width: min(74vw, 900px, calc(27vh * 2.406));
+    }
+
+    .hero p {
+      margin-bottom: 8px;
+    }
   }
 
   /* =========================
@@ -757,9 +828,10 @@ const css = `
   .num {
     font-size: 36px;
     font-weight: 800;
-    color: var(--primary);
+    color: var(--primary-light);
     line-height: 1;
     margin-bottom: 8px;
+    padding: 10px;
   }
 
   /* =========================
