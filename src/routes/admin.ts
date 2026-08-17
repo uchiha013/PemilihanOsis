@@ -423,7 +423,7 @@ adminRoutes.get("/candidates", async (c) => {
   return c.html(
     layout(
       "Kandidat",
-      `<div class="eyebrow">PASANGAN CALON</div><h1>Manajemen Kandidat</h1><div class="grid">${rows.results.map((x) => `<form class="card" method="post" style="margin:0"><fieldset><legend>Paslon ${x.candidate_number}</legend><input type="hidden" name="id" value="${x.id}"><label>Nomor urut</label><input type="number" value="${x.candidate_number}" readonly><label>Ketua</label><input name="chairman" value="${esc(x.chairman_name)}" required><label>Wakil</label><input name="vice" value="${esc(x.vice_chairman_name)}" required><label>URL Foto</label><input name="photo" value="${esc(x.photo_url)}"><label>Visi</label><textarea name="vision">${esc(x.vision)}</textarea><label>Misi</label><textarea name="mission">${esc(x.mission)}</textarea></fieldset><button style="margin-top:18px">Simpan Paslon ${x.candidate_number}</button></form>`).join("")}</div>${csrf(c)}`,
+      `<div class="eyebrow">PASANGAN CALON</div><h1>Manajemen Kandidat</h1><div class="grid">${rows.results.map((x) => `<form class="card" method="post" style="margin:0"><fieldset><legend>Paslon ${x.candidate_number}</legend><input type="hidden" name="id" value="${x.id}"><label>Nomor urut</label><input type="number" value="${x.candidate_number}" readonly><label>Ketua</label><input name="chairman" value="${esc(x.chairman_name)}" required><label>Wakil</label><input name="vice" value="${esc(x.vice_chairman_name)}" required><label>URL Foto</label><input name="photo" value="${esc(x.photo_url)}"></fieldset><button style="margin-top:18px">Simpan Paslon ${x.candidate_number}</button></form>`).join("")}</div>${csrf(c)}`,
       { admin: true, csrfToken: c.get("csrfToken") },
     ),
   );

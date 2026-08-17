@@ -1,15 +1,9 @@
-import { esc } from "../utils/http";
+import { esc } from '../utils/http';
 
 export function layout(
   title: string,
   content: string,
-  opts: {
-    admin?: boolean;
-    wide?: boolean;
-    login?: boolean;
-    bilik?: boolean;
-    csrfToken?: string;
-  } = {},
+  opts: { admin?: boolean; wide?: boolean; login?: boolean; bilik?: boolean; csrfToken?: string } = {},
 ) {
   return `
     <!doctype html>
@@ -24,7 +18,7 @@ export function layout(
         <style>${css}</style>
       </head>
 
-      <body class="${opts.admin ? "admin-theme" : ""} ${opts.login ? "login-page" : ""}">
+      <body class="${opts.admin ? 'admin-theme' : ''} ${opts.login ? 'login-page' : ''}">
         <!-- Background Glowing Particles (Pure CSS) -->
         <div class="bg-glow"></div>
 
@@ -53,16 +47,16 @@ export function layout(
                       `
                   }
                   <form method="post" action="/admin/logout" style="display:inline;margin:0">
-                    <input type="hidden" name="csrf" value="${esc(opts.csrfToken || "")}">
+                    <input type="hidden" name="csrf" value="${esc(opts.csrfToken || '')}">
                     <button class="secondary" style="padding:8px 14px;font-size:14px">Logout</button>
                   </form>
                 </nav>
               `
-              : ""
+              : ''
           }
         </header>
 
-        <main class="${opts.wide ? "wide" : ""} ${opts.admin ? "admin-page" : ""}">
+        <main class="${opts.wide ? 'wide' : ''} ${opts.admin ? 'admin-page' : ''}">
           ${content}
         </main>
 
@@ -418,16 +412,16 @@ const css = `
     margin-bottom: 40px;
   }
 
-  body.login-page { 
+  body.login-page {
     height: 100vh;
   }
 
-  .login-page header { 
+  .login-page header {
     height: 56px;
     flex: 0 0 56px;
   }
 
-  .login-page main { 
+  .login-page main {
     max-width: none;
     margin: 0 auto;
     padding: clamp(8px, 1.2vh, 14px) 24px;
@@ -436,13 +430,13 @@ const css = `
     justify-content: center;
   }
 
-  .login-page footer { 
+  .login-page footer {
     flex: 0 0 auto;
     padding: 6px 12px 8px;
     font-size: 11px;
   }
 
-  .hero { 
+  .hero {
     width: min(100%, 1100px);
     max-width: none;
     padding: 0;
@@ -451,22 +445,22 @@ const css = `
     align-items: center;
   }
 
-  .login-banner { 
+  .login-banner {
     display: block;
-     width: min(74vw, 900px, calc(33vh * 2.406));
-     height: auto;
-     margin: 0 auto clamp(8px, 1.5vh, 16px);
-     border-radius: var(--radius-lg);
-     border: 2px solid rgba(255, 255, 255, 0.75);
-     box-shadow: var(--shadow-lg);
+    width: min(74vw, 900px, calc(33vh * 2.406));
+    height: auto;
+    margin: 0 auto clamp(8px, 1.5vh, 16px);
+    border-radius: var(--radius-lg);
+    border: 2px solid rgba(255, 255, 255, 0.75);
+    box-shadow: var(--shadow-lg);
   }
 
-  .hero h1 { 
+  .hero h1 {
     font-size: clamp(30px, 4.2vw, 54px);
-     margin: 0 0 12px;
+    margin: 0 0 12px;
   }
 
-  .hero p { 
+  .hero p {
     max-width: 900px;
     margin: 0 0 clamp(10px, 1.5vh, 16px);
     font-size: clamp(14px, 1.25vw, 18px);
@@ -474,39 +468,40 @@ const css = `
     margin-bottom: 20px;
   }
 
-  .hero .eyebrow { 
+  .hero .eyebrow {
     margin: 8px;
   }
 
-  .hero form.card { 
+  .hero form.card {
     width: min(440px, 94vw);
-     margin: 12px;
-     padding: 12px 28px 16px;
+    margin: 12px;
+    padding: 12px 28px 16px;
   }
 
-  .hero form.card label { 
+  .hero form.card label {
     margin: 8px 0 4px;
-     font-size: 12px;
+    font-size: 12px;
   }
 
-  .hero form.card input { 
+  .hero form.card input {
     padding: 7px 12px;
   }
 
-  .hero form.card button { 
+  .hero form.card button {
     width: 60%;
     margin-top: 20px !important;
     padding: 10px 16px;
   }
 
-  @media (max-height: 800px) and (min-width: 769px) {
-    .login-banner { 
-        width: min(74vw, 900px, calc(27vh * 2.406));
-      }
 
-      .hero p { 
-        margin-bottom: 8px;
-      }
+  @media (max-height: 800px) and (min-width: 769px) {
+    .login-banner {
+      width: min(74vw, 900px, calc(27vh * 2.406));
+    }
+
+    .hero p {
+      margin-bottom: 8px;
+    }
   }
 
   /* =========================
@@ -604,10 +599,6 @@ const css = `
     box-shadow: var(--shadow-lg);
   }
 
-  .voter-info {
-    padding-bottom: 8px !important;
-  }
-
   .card h2,
   .card p,
   .card details,
@@ -622,6 +613,10 @@ const css = `
     color: var(--navy);
   }
 
+  /* Halaman admin pakai kartu terang — teks di dalamnya (h2, angka .stat,
+     label polos, dsb) didesain untuk background terang, jadi kartu gelap
+     bikin teks nyaris tak kelihatan. Halaman publik (beranda, quick count
+     proyektor) tetap pakai kartu gelap sesuai desain aslinya. */
   .admin-page .card {
     background: #ffffff;
     border: 1px solid var(--slate-100);
